@@ -38,7 +38,7 @@ public class RedisSlidingWindowRateLimiter {
 
     public static void main(String[] args) {
         Jedis jedis = new Jedis("localhost", 6379);
-        RedisSlidingWindowRateLimiter rateLimiter = new RedisSlidingWindowRateLimiter(jedis, "rate_limiter", 2, 1000); // 每秒最多2个请求
+        RedisSlidingWindowRateLimiter rateLimiter = new RedisSlidingWindowRateLimiter(jedis, "rate_limiter", 1, 100000); // 每秒最多2个请求
 
         // 模拟请求
         for (int i = 0; i < 10; i++) {
