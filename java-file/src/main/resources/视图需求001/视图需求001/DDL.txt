@@ -1,0 +1,4 @@
+create table `dp_view`.`test_001` (
+    "col_a" varchar(40) not null comment '字段a',
+    "col_b" varchar(40) not null comment '字段b'
+) engine=express default charset=utf8 tablespace='sys_tablespace' comment='测试001';
