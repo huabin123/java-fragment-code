@@ -13,25 +13,25 @@ public class ReflectionDemoMain {
         System.out.println(">>> 运行基础反射演示:");
         BasicReflectionDemo.main(args);
 
-        System.out.println("\n" + "=".repeat(50) + "\n");
+
 
         // 2. 泛型反射
         System.out.println(">>> 运行泛型反射演示:");
         GenericReflectionDemo.main(args);
 
-        System.out.println("\n" + "=".repeat(50) + "\n");
+
 
         // 3. 数组反射
         System.out.println(">>> 运行数组反射演示:");
         ArrayReflectionDemo.main(args);
 
-        System.out.println("\n" + "=".repeat(50) + "\n");
+
 
         // 4. 性能对比
         System.out.println(">>> 运行性能对比演示:");
         PerformanceDemo.main(args);
 
-        System.out.println("\n" + "=".repeat(50) + "\n");
+
 
         // 5. 实用工具演示
         System.out.println(">>> Bean 拷贝工具演示:");

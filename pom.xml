@@ -14,6 +14,7 @@
         <module>java-juc</module>
         <module>java-core</module>
         <module>java-excel</module>
+        <module>java-convetor</module>
     </modules>
 
     <properties>
