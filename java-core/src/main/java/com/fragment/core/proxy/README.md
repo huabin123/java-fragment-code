@@ -14,13 +14,16 @@ proxy/
 ├── CglibProxyDemo.java           # CGLIB代理演示
 ├── ProxyPerformanceDemo.java     # 代理性能对比
 ├── AopFramework.java             # 简单AOP框架
+├── SpringAopProxyDemo.java       # Spring AOP代理选择演示
+├── SpringProxyFactory.java       # Spring DefaultAopProxyFactory模拟
 ├── ProxyDemoMain.java            # 统一演示入口
 ├── docs/                         # 文档目录
 │   ├── 01-动态代理基础原理.md
 │   ├── 02-JDK动态代理深入.md
 │   ├── 03-CGLIB代理原理.md
 │   ├── 04-代理性能分析.md
-│   └── 05-AOP与实际应用.md
+│   ├── 05-AOP与实际应用.md
+│   └── 06-Spring AOP代理选择机制.md
 └── README.md                     # 本文件
 ```
 
@@ -43,6 +46,7 @@ com.fragment.core.proxy.ProxyDemoMain
 3. **CGLIB原理** → `03-CGLIB代理原理.md` + `CglibProxyDemo.java`
 4. **性能分析** → `04-代理性能分析.md` + `ProxyPerformanceDemo.java`
 5. **实际应用** → `05-AOP与实际应用.md` + `AopFramework.java`
+6. **Spring AOP** → `06-Spring AOP代理选择机制.md` + `SpringAopProxyDemo.java` + `SpringProxyFactory.java`
 
 ## 🎯 核心知识点
 
@@ -55,6 +59,12 @@ com.fragment.core.proxy.ProxyDemoMain
 - **基于继承**：创建目标类的子类实现代理
 - **字节码生成**：使用 ASM 框架生成字节码
 - **无接口限制**：可以代理普通类
+
+### Spring AOP 代理选择
+- **Spring 5.x 之前**：有接口用 JDK，无接口用 CGLIB
+- **Spring Boot 2.x+**：默认使用 CGLIB（`proxyTargetClass=true`）
+- **核心类**：`DefaultAopProxyFactory` 负责选择代理方式
+- **配置控制**：通过 `@EnableAspectJAutoProxy(proxyTargetClass=true/false)` 控制
 
 ### 性能对比
 - **直接调用**：基准性能
@@ -83,14 +93,21 @@ com.fragment.core.proxy.ProxyDemoMain
    - 权限控制
 
 2. **框架开发**
-   - Spring Bean 代理
+   - Spring Bean 代理（AOP、事务）
    - MyBatis Mapper 接口
    - RPC 远程调用
+   - Dubbo 服务代理
 
 3. **设计模式**
    - 装饰器模式
    - 适配器模式
    - 外观模式
+
+4. **Spring AOP 实际应用**
+   - `@Transactional` 事务管理
+   - `@Cacheable` 缓存
+   - `@Async` 异步执行
+   - 自定义切面（日志、监控、权限）
 
 ## ⚠️ 注意事项
 
@@ -104,13 +121,44 @@ com.fragment.core.proxy.ProxyDemoMain
 - 需要无参构造器
 - 依赖第三方库
 
+### Spring AOP 注意事项
+- **内部调用问题**：同一个类内部方法调用不会触发代理（事务失效）
+- **类型注入问题**：JDK 代理只能注入接口类型，CGLIB 可以注入实现类
+- **性能考虑**：CGLIB 创建慢但调用快，适合长期运行的应用
+- **配置选择**：Spring Boot 2.x+ 默认 CGLIB，无需特殊配置
+
 ## 🔧 优化建议
 
 1. **缓存代理对象**：避免重复创建
 2. **选择合适的代理类型**：根据场景选择 JDK 或 CGLIB
 3. **减少拦截逻辑**：避免复杂的切面逻辑
 4. **使用 MethodHandle**：Java 7+ 的高性能替代方案
+5. **Spring Boot 默认配置**：使用 CGLIB（`proxyTargetClass=true`）获得更好性能
+
+## 🌟 Spring AOP 核心要点
+
+### 代理选择逻辑（DefaultAopProxyFactory）
+```
+if (optimize || proxyTargetClass || 无接口) {
+    if (目标类是接口 || 已是代理类) {
+        使用 JDK 代理
+    } else {
+        使用 CGLIB 代理
+    }
+} else {
+    使用 JDK 代理（默认）
+}
+```
+
+### Spring Boot 配置
+```properties
+# 强制使用 CGLIB（默认值）
+spring.aop.proxy-target-class=true
+
+# 切换为 JDK 代理
+spring.aop.proxy-target-class=false
+```
 
 ---
 
-**提示**：动态代理是 AOP 编程的基础，理解其原理有助于更好地使用 Spring 等框架。在性能敏感的场景中，考虑使用编译时代理或直接的设计模式实现。
+**提示**：动态代理是 AOP 编程的基础，理解其原理有助于更好地使用 Spring 等框架。Spring AOP 会智能选择最合适的代理方式，但了解其选择逻辑可以帮助你避免常见陷阱（如事务失效、类型转换问题等）。
