@@ -200,6 +200,8 @@ java -cp target/classes com.fragment.core.thread.demo.ThreadCooperationDemo
 - join()的使用和特点
 - yield()的使用和特点
 - wait/notify的使用和特点
+- Lost Wakeup（丢失唤醒）问题及解决方案
+- 两个线程交替打印1到100（经典面试题）
 
 ---
 
@@ -394,7 +396,27 @@ try {
 
 ---
 
-### 5. ThreadLocal使用后不remove
+### 5. Lost Wakeup（丢失唤醒）
+
+```java
+// ❌ 错误：检查条件在synchronized块外
+if (!ready) {
+    synchronized (lock) {
+        lock.wait(); // notify()可能已经执行，唤醒信号丢失
+    }
+}
+
+// ✅ 正确：检查条件和wait()在同一个synchronized块中
+synchronized (lock) {
+    while (!ready) {
+        lock.wait(); // 条件变量保存状态，避免Lost Wakeup
+    }
+}
+```
+
+---
+
+### 6. ThreadLocal使用后不remove
 
 ```java
 // ❌ 错误：不清理
