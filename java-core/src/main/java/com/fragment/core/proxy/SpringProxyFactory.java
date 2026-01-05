@@ -1,8 +1,5 @@
 package com.fragment.core.proxy;
 
-import net.sf.cglib.proxy.Enhancer;
-import net.sf.cglib.proxy.MethodInterceptor;
-
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
@@ -11,8 +8,26 @@ import java.lang.reflect.Proxy;
  * 模拟 Spring 的 DefaultAopProxyFactory
  * 
  * 这个类展示了 Spring 如何根据配置和目标类特征选择代理方式
+ * 
+ * 注意：CGLIB 部分使用反射加载，避免编译时依赖
+ * 运行环境：JDK 1.8
  */
 public class SpringProxyFactory {
+    
+    // 检查是否有 CGLIB 依赖
+    private static final boolean CGLIB_AVAILABLE = checkCglibAvailable();
+    
+    /**
+     * 检查 CGLIB 是否可用
+     */
+    private static boolean checkCglibAvailable() {
+        try {
+            Class.forName("net.sf.cglib.proxy.Enhancer");
+            return true;
+        } catch (ClassNotFoundException e) {
+            return false;
+        }
+    }
 
     /**
      * 代理配置（模拟 Spring 的 AdvisedSupport）
@@ -74,6 +89,7 @@ public class SpringProxyFactory {
         System.out.println("实现的接口数: " + config.getProxiedInterfaces().length);
         System.out.println("optimize: " + config.isOptimize());
         System.out.println("proxyTargetClass: " + config.isProxyTargetClass());
+        System.out.println("CGLIB 可用: " + CGLIB_AVAILABLE);
         System.out.println();
 
         // Spring 的判断逻辑
@@ -89,6 +105,16 @@ public class SpringProxyFactory {
             if (targetClass.isInterface() || Proxy.isProxyClass(targetClass)) {
                 System.out.println("但目标类是接口或代理类，改用 JDK 代理");
                 return createJdkProxy(config);
+            }
+            
+            // 检查 CGLIB 是否可用
+            if (!CGLIB_AVAILABLE) {
+                System.out.println("警告: CGLIB 不可用，降级使用 JDK 代理");
+                if (config.getProxiedInterfaces().length > 0) {
+                    return createJdkProxy(config);
+                } else {
+                    throw new IllegalStateException("无法创建代理：目标类没有接口且 CGLIB 不可用");
+                }
             }
             
             return createCglibProxy(config);
@@ -134,23 +160,70 @@ public class SpringProxyFactory {
     }
 
     /**
-     * 创建 CGLIB 代理
+     * 创建 CGLIB 代理（使用反射避免编译时依赖）
      */
     @SuppressWarnings("unchecked")
     private static <T> T createCglibProxy(ProxyConfig config) {
-        Object target = config.getTarget();
-        
-        Enhancer enhancer = new Enhancer();
-        enhancer.setSuperclass(target.getClass());
-        
-        // 如果有接口，也实现这些接口
-        Class<?>[] interfaces = config.getProxiedInterfaces();
-        if (interfaces.length > 0) {
-            enhancer.setInterfaces(interfaces);
+        try {
+            Object target = config.getTarget();
+            
+            // 使用反射加载 CGLIB 类
+            Class<?> enhancerClass = Class.forName("net.sf.cglib.proxy.Enhancer");
+            Object enhancer = enhancerClass.newInstance();
+            
+            // 设置父类：enhancer.setSuperclass(target.getClass())
+            Method setSuperclass = enhancerClass.getMethod("setSuperclass", Class.class);
+            setSuperclass.invoke(enhancer, target.getClass());
+            
+            // 如果有接口，也实现这些接口：enhancer.setInterfaces(interfaces)
+            Class<?>[] interfaces = config.getProxiedInterfaces();
+            if (interfaces.length > 0) {
+                Method setInterfaces = enhancerClass.getMethod("setInterfaces", Class[].class);
+                setInterfaces.invoke(enhancer, (Object) interfaces);
+            }
+            
+            // 设置回调：enhancer.setCallback(callback)
+            Class<?> callbackClass = Class.forName("net.sf.cglib.proxy.Callback");
+            Method setCallback = enhancerClass.getMethod("setCallback", callbackClass);
+            Object callback = createCglibCallback(target);
+            setCallback.invoke(enhancer, callback);
+            
+            // 创建代理：enhancer.create()
+            Method create = enhancerClass.getMethod("create");
+            return (T) create.invoke(enhancer);
+        } catch (Exception e) {
+            throw new RuntimeException("创建 CGLIB 代理失败: " + e.getMessage(), e);
         }
-        
-        enhancer.setCallback(new SimpleMethodInterceptor(target));
-        return (T) enhancer.create();
+    }
+    
+    /**
+     * 创建 CGLIB 回调（使用反射）
+     */
+    private static Object createCglibCallback(final Object target) {
+        try {
+            Class<?> methodInterceptorClass = Class.forName("net.sf.cglib.proxy.MethodInterceptor");
+            
+            return Proxy.newProxyInstance(
+                    methodInterceptorClass.getClassLoader(),
+                    new Class<?>[]{methodInterceptorClass},
+                    new InvocationHandler() {
+                        @Override
+                        public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+                            // intercept(Object obj, Method method, Object[] args, MethodProxy proxy)
+                            if (method.getName().equals("intercept") && args != null && args.length == 4) {
+                                Method targetMethod = (Method) args[1];
+                                Object[] methodArgs = (Object[]) args[2];
+                                
+                                // 调用目标方法
+                                return targetMethod.invoke(target, methodArgs);
+                            }
+                            return null;
+                        }
+                    }
+            );
+        } catch (Exception e) {
+            throw new RuntimeException("创建 CGLIB 回调失败: " + e.getMessage(), e);
+        }
     }
 
     /**
@@ -170,45 +243,49 @@ public class SpringProxyFactory {
     }
 
     /**
-     * 简单的 MethodInterceptor
-     */
-    static class SimpleMethodInterceptor implements MethodInterceptor {
-        private final Object target;
-
-        public SimpleMethodInterceptor(Object target) {
-            this.target = target;
-        }
-
-        @Override
-        public Object intercept(Object obj, Method method, Object[] args, 
-                net.sf.cglib.proxy.MethodProxy proxy) throws Throwable {
-            return proxy.invoke(target, args);
-        }
-    }
-
-    /**
      * 演示程序
      */
     public static void main(String[] args) {
         System.out.println("=== Spring DefaultAopProxyFactory 代理选择逻辑演示 ===");
+        
+        if (!CGLIB_AVAILABLE) {
+            System.out.println("\n【提示】CGLIB 未找到，部分演示将跳过或降级为 JDK 代理");
+            System.out.println("如需完整演示，请添加 CGLIB 依赖：");
+            System.out.println("<dependency>");
+            System.out.println("    <groupId>cglib</groupId>");
+            System.out.println("    <artifactId>cglib</artifactId>");
+            System.out.println("    <version>3.3.0</version>");
+            System.out.println("</dependency>\n");
+        }
 
         // 场景1：有接口，默认配置 -> JDK 代理
         demonstrateScenario1();
 
-        System.out.println("\n" + "=".repeat(70));
+        printSeparator();
 
         // 场景2：有接口，proxyTargetClass=true -> CGLIB 代理
         demonstrateScenario2();
 
-        System.out.println("\n" + "=".repeat(70));
+        printSeparator();
 
         // 场景3：无接口 -> CGLIB 代理
         demonstrateScenario3();
 
-        System.out.println("\n" + "=".repeat(70));
+        printSeparator();
 
         // 场景4：optimize=true -> CGLIB 代理
         demonstrateScenario4();
+    }
+    
+    /**
+     * 打印分隔线（JDK 1.8 兼容）
+     */
+    private static void printSeparator() {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < 70; i++) {
+            sb.append("=");
+        }
+        System.out.println("\n" + sb.toString());
     }
 
     /**

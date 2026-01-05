@@ -1,9 +1,5 @@
 package com.fragment.core.proxy;
 
-import net.sf.cglib.proxy.Enhancer;
-import net.sf.cglib.proxy.MethodInterceptor;
-import net.sf.cglib.proxy.MethodProxy;
-
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
@@ -14,29 +10,61 @@ import java.lang.reflect.Proxy;
  * Spring AOP 会根据目标类的特征自动选择 JDK 动态代理或 CGLIB 代理：
  * 1. Spring 5.x 之前：有接口用 JDK，无接口用 CGLIB
  * 2. Spring Boot 2.x+：默认使用 CGLIB（proxyTargetClass=true）
+ * 
+ * 注意：本示例主要演示 JDK 动态代理，CGLIB 部分需要添加依赖
+ * 
+ * 运行环境：JDK 1.8
  */
 public class SpringAopProxyDemo {
 
+    // 检查是否有 CGLIB 依赖
+    private static final boolean CGLIB_AVAILABLE = checkCglibAvailable();
+
     public static void main(String[] args) {
         System.out.println("=== Spring AOP 代理选择机制演示 ===\n");
+        System.out.println("CGLIB 可用: " + CGLIB_AVAILABLE);
+        System.out.println();
 
         // 场景1：有接口的类 - Spring 5.x 之前默认用 JDK 代理
         demonstrateInterfaceBasedProxy();
 
-        System.out.println("\n" + "=".repeat(60) + "\n");
+        System.out.println("\n" + "===========================" + "\n");
 
-        // 场景2：无接口的类 - 只能用 CGLIB 代理
-        demonstrateClassBasedProxy();
+        if (CGLIB_AVAILABLE) {
+            // 场景2：无接口的类 - 只能用 CGLIB 代理
+            demonstrateClassBasedProxy();
 
-        System.out.println("\n" + "=".repeat(60) + "\n");
+            System.out.println("\n" + "===========================" + "\n");
 
-        // 场景3：强制使用 CGLIB（proxyTargetClass=true）
-        demonstrateForceCglibProxy();
+            // 场景3：强制使用 CGLIB（proxyTargetClass=true）
+            demonstrateForceCglibProxy();
 
-        System.out.println("\n" + "=".repeat(60) + "\n");
+            System.out.println("\n" + "===========================" + "\n");
+        } else {
+            System.out.println("【提示】CGLIB 未找到，跳过 CGLIB 相关演示");
+            System.out.println("如需使用 CGLIB，请添加依赖：");
+            System.out.println("<dependency>");
+            System.out.println("    <groupId>cglib</groupId>");
+            System.out.println("    <artifactId>cglib</artifactId>");
+            System.out.println("    <version>3.3.0</version>");
+            System.out.println("</dependency>");
+            System.out.println("\n" + "===========================" + "\n");
+        }
 
         // 场景4：判断代理类型
         demonstrateProxyTypeDetection();
+    }
+
+    /**
+     * 检查 CGLIB 是否可用
+     */
+    private static boolean checkCglibAvailable() {
+        try {
+            Class.forName("net.sf.cglib.proxy.Enhancer");
+            return true;
+        } catch (ClassNotFoundException e) {
+            return false;
+        }
     }
 
     /**
@@ -66,16 +94,20 @@ public class SpringAopProxyDemo {
         System.out.println("【场景2】无接口的类 - CGLIB 代理");
         System.out.println("Spring 无法使用 JDK 代理，自动选择 CGLIB\n");
 
-        OrderService target = new OrderService();
-        
-        // 模拟 Spring 的 CglibAopProxy
-        OrderService proxy = createCglibProxy(target);
+        try {
+            OrderService target = new OrderService();
+            
+            // 模拟 Spring 的 CglibAopProxy
+            OrderService proxy = createCglibProxy(target);
 
-        System.out.println("代理类型: " + proxy.getClass().getName());
-        System.out.println("是否为 CGLIB 代理: " + proxy.getClass().getName().contains("$$"));
-        System.out.println();
+            System.out.println("代理类型: " + proxy.getClass().getName());
+            System.out.println("是否为 CGLIB 代理: " + proxy.getClass().getName().contains("$$"));
+            System.out.println();
 
-        proxy.createOrder("ORDER-001");
+            proxy.createOrder("ORDER-001");
+        } catch (Exception e) {
+            System.err.println("CGLIB 代理创建失败: " + e.getMessage());
+        }
     }
 
     /**
@@ -86,17 +118,21 @@ public class SpringAopProxyDemo {
         System.out.println("【场景3】强制使用 CGLIB - proxyTargetClass=true");
         System.out.println("Spring Boot 2.x+ 的默认行为\n");
 
-        UserServiceImpl target = new UserServiceImpl();
-        
-        // 强制使用 CGLIB，即使实现了接口
-        UserServiceImpl proxy = createCglibProxy(target);
+        try {
+            UserServiceImpl target = new UserServiceImpl();
+            
+            // 强制使用 CGLIB，即使实现了接口
+            UserServiceImpl proxy = createCglibProxy(target);
 
-        System.out.println("代理类型: " + proxy.getClass().getName());
-        System.out.println("父类类型: " + proxy.getClass().getSuperclass().getName());
-        System.out.println();
+            System.out.println("代理类型: " + proxy.getClass().getName());
+            System.out.println("父类类型: " + proxy.getClass().getSuperclass().getName());
+            System.out.println();
 
-        User user = proxy.findById(2L);
-        System.out.println("返回结果: " + user);
+            User user = proxy.findById(2L);
+            System.out.println("返回结果: " + user);
+        } catch (Exception e) {
+            System.err.println("CGLIB 代理创建失败: " + e.getMessage());
+        }
     }
 
     /**
@@ -106,13 +142,19 @@ public class SpringAopProxyDemo {
         System.out.println("【场景4】代理类型检测\n");
 
         UserService jdkProxy = createJdkProxy(new UserServiceImpl(), UserService.class);
-        UserServiceImpl cglibProxy = createCglibProxy(new UserServiceImpl());
 
         System.out.println("=== JDK 代理检测 ===");
         detectProxyType(jdkProxy);
 
-        System.out.println("\n=== CGLIB 代理检测 ===");
-        detectProxyType(cglibProxy);
+        if (CGLIB_AVAILABLE) {
+            try {
+                UserServiceImpl cglibProxy = createCglibProxy(new UserServiceImpl());
+                System.out.println("\n=== CGLIB 代理检测 ===");
+                detectProxyType(cglibProxy);
+            } catch (Exception e) {
+                System.err.println("\nCGLIB 代理创建失败: " + e.getMessage());
+            }
+        }
     }
 
     /**
@@ -129,13 +171,72 @@ public class SpringAopProxyDemo {
 
     /**
      * 创建 CGLIB 代理（模拟 Spring 的 CglibAopProxy）
+     * 使用反射避免编译时依赖
      */
     @SuppressWarnings("unchecked")
     private static <T> T createCglibProxy(T target) {
-        Enhancer enhancer = new Enhancer();
-        enhancer.setSuperclass(target.getClass());
-        enhancer.setCallback(new SpringAopMethodInterceptor(target));
-        return (T) enhancer.create();
+        try {
+            // 使用反射加载 CGLIB 类
+            Class<?> enhancerClass = Class.forName("net.sf.cglib.proxy.Enhancer");
+            Object enhancer = enhancerClass.newInstance();
+            
+            // 设置父类
+            Method setSuperclass = enhancerClass.getMethod("setSuperclass", Class.class);
+            setSuperclass.invoke(enhancer, target.getClass());
+            
+            // 设置回调
+            Class<?> callbackClass = Class.forName("net.sf.cglib.proxy.Callback");
+            Method setCallback = enhancerClass.getMethod("setCallback", callbackClass);
+            Object callback = createCglibCallback(target);
+            setCallback.invoke(enhancer, callback);
+            
+            // 创建代理
+            Method create = enhancerClass.getMethod("create");
+            return (T) create.invoke(enhancer);
+        } catch (Exception e) {
+            throw new RuntimeException("创建 CGLIB 代理失败: " + e.getMessage(), e);
+        }
+    }
+    
+    /**
+     * 创建 CGLIB 回调（使用反射）
+     */
+    private static Object createCglibCallback(final Object target) {
+        try {
+            Class<?> methodInterceptorClass = Class.forName("net.sf.cglib.proxy.MethodInterceptor");
+            
+            return java.lang.reflect.Proxy.newProxyInstance(
+                    methodInterceptorClass.getClassLoader(),
+                    new Class<?>[]{methodInterceptorClass},
+                    new InvocationHandler() {
+                        @Override
+                        public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+                            // intercept(Object obj, Method method, Object[] args, MethodProxy proxy)
+                            if (method.getName().equals("intercept") && args.length == 4) {
+                                Object obj = args[0];
+                                Method targetMethod = (Method) args[1];
+                                Object[] methodArgs = (Object[]) args[2];
+                                Object methodProxy = args[3];
+                                
+                                System.out.println("[CGLIB Proxy] Before: " + targetMethod.getName());
+                                
+                                try {
+                                    // 调用目标方法
+                                    Object result = targetMethod.invoke(target, methodArgs);
+                                    System.out.println("[CGLIB Proxy] After: " + targetMethod.getName());
+                                    return result;
+                                } catch (Exception e) {
+                                    System.out.println("[CGLIB Proxy] Exception: " + targetMethod.getName());
+                                    throw e;
+                                }
+                            }
+                            return null;
+                        }
+                    }
+            );
+        } catch (Exception e) {
+            throw new RuntimeException("创建 CGLIB 回调失败: " + e.getMessage(), e);
+        }
     }
 
     /**
@@ -200,34 +301,6 @@ public class SpringAopProxyDemo {
         }
     }
 
-    /**
-     * 模拟 Spring 的 CglibAopProxy.DynamicAdvisedInterceptor
-     */
-    static class SpringAopMethodInterceptor implements MethodInterceptor {
-        private final Object target;
-
-        public SpringAopMethodInterceptor(Object target) {
-            this.target = target;
-        }
-
-        @Override
-        public Object intercept(Object obj, Method method, Object[] args, MethodProxy proxy) 
-                throws Throwable {
-            // 模拟 Spring AOP 的拦截器链执行
-            System.out.println("[CGLIB Proxy] Before: " + method.getName());
-            
-            try {
-                // 使用 MethodProxy.invoke() 调用目标方法（性能更好）
-                Object result = proxy.invoke(target, args);
-                
-                System.out.println("[CGLIB Proxy] After: " + method.getName());
-                return result;
-            } catch (Exception e) {
-                System.out.println("[CGLIB Proxy] Exception: " + method.getName());
-                throw e;
-            }
-        }
-    }
 
     /**
      * 无接口的服务类（只能用 CGLIB 代理）
