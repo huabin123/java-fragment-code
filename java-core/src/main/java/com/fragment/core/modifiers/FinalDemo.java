@@ -99,6 +99,50 @@ public class FinalDemo {
     }
     
     /**
+     * final 引用类型参数演示 - 重要概念
+     * final 只限制引用不可变，不限制对象内容
+     */
+    public void processCollection(final List<String> items) {
+        System.out.println("\n=== Final Reference Parameter Demo ===");
+        System.out.println("原始集合: " + items);
+        
+        // ✓ 可以修改集合内容
+        items.add("新增项1");
+        items.add("新增项2");
+        System.out.println("添加元素后: " + items);
+        
+        items.remove(0);
+        System.out.println("删除元素后: " + items);
+        
+        // ✗ 不能修改引用
+        // items = new ArrayList<>(); // 编译错误
+        
+        System.out.println("\n关键点：final 参数可以修改集合内容，只是不能重新赋值！");
+    }
+    
+    /**
+     * 演示 final 的三个作用层次
+     */
+    public void demonstrateFinalScopes() {
+        System.out.println("\n=== Final 的三个作用层次 ===");
+        
+        // 1. final 修饰类 - 防止继承
+        System.out.println("1. final 修饰类：防止继承");
+        System.out.println("   例如：String、Integer 等类都是 final 的");
+        
+        // 2. final 修饰方法 - 防止重写
+        System.out.println("\n2. final 修饰方法：防止重写");
+        System.out.println("   子类不能重写 final 方法");
+        
+        // 3. final 修饰变量 - 防止重新赋值（但不防止内容修改）
+        System.out.println("\n3. final 修饰变量：防止重新赋值");
+        final List<String> list = new ArrayList<>();
+        list.add("可以修改内容");
+        // list = new ArrayList<>(); // 但不能重新赋值
+        System.out.println("   final 集合可以修改内容: " + list);
+    }
+    
+    /**
      * 有效 final（Effectively Final）演示
      */
     public void effectivelyFinalDemo() {
@@ -225,6 +269,15 @@ public class FinalDemo {
         
         // 4. 测试参数
         demo.processData("Test Input", 42);
+        
+        // 4.5 测试 final 引用类型参数（重要概念）
+        List<String> testList = new ArrayList<>(Arrays.asList("原始项1", "原始项2"));
+        System.out.println("\n调用前的集合: " + testList);
+        demo.processCollection(testList);
+        System.out.println("调用后的集合: " + testList + " (集合内容被修改了！)");
+        
+        // 4.6 演示 final 的三个作用层次
+        demo.demonstrateFinalScopes();
         
         // 5. 测试有效 final
         demo.effectivelyFinalDemo();

@@ -9,7 +9,8 @@ lock/
 │   ├── 02_公平锁与非公平锁.md                # 第二章：公平性、性能对比
 │   ├── 03_Condition条件队列.md               # 第三章：Condition使用、生产者消费者
 │   ├── 04_ReadWriteLock读写锁.md             # 第四章：读写分离、性能优化
-│   └── 05_StampedLock乐观锁.md               # 第五章：乐观读、性能提升
+│   ├── 05_StampedLock乐观锁.md               # 第五章：乐观读、性能提升
+│   └── 06_Lock实现原理与AQS.md               # 第六章：AQS源码分析、实现原理
 ├── demo/                                    # 演示代码
 │   ├── ReentrantLockDemo.java              # ReentrantLock基本使用
 │   ├── ConditionDemo.java                  # Condition条件队列演示
@@ -153,6 +154,34 @@ lock/
 - ✅ 理解乐观读的原理
 - ✅ 掌握锁转换技术
 - ✅ 了解StampedLock的适用场景
+
+---
+
+### 阶段6：理解实现原理（第6章）⭐
+
+**核心问题**：
+
+- ❓ AQS是什么？如何工作？
+- ❓ ReentrantLock如何基于AQS实现？
+- ❓ 加锁和解锁的完整流程是什么？
+- ❓ 等待队列是如何管理的？
+- ❓ 公平锁和非公平锁的实现差异？
+- ❓ 如何实现可重入？
+
+**学习方式**：
+
+1. 阅读 `docs/06_Lock实现原理与AQS.md`
+2. 对照JDK源码理解实现细节
+3. 画出加锁解锁流程图
+4. 理解AQS的设计思想
+
+**关键收获**：
+
+- ✅ 深入理解AQS框架
+- ✅ 掌握Lock的实现原理
+- ✅ 理解同步队列的管理
+- ✅ 掌握CAS和LockSupport的使用
+- ✅ 理解模板方法模式的应用
 
 ---
 
@@ -517,6 +546,7 @@ if (!lock.validate(stamp)) {
 3. ✅ **Condition**：条件队列、await/signal
 4. ✅ **ReadWriteLock**：读写分离、锁降级
 5. ✅ **StampedLock**：乐观读、性能优化
+6. ✅ **AQS原理**：同步队列、state状态、CAS操作
 
 **核心收获**：
 
@@ -525,10 +555,11 @@ if (!lock.validate(stamp)) {
 - 💡 能够选择合适的锁
 - 📚 掌握正确的加锁模式
 - ✨ 避免常见的锁陷阱
+- 🚀 深入理解Lock的实现原理
 
 **继续学习**：
 
-- 研究AQS的实现原理（aqs模块）
+- 深入研究AQS的其他应用（Semaphore、CountDownLatch等）
 - 学习同步工具类（sync模块）
 - 学习并发容器（container模块）
 

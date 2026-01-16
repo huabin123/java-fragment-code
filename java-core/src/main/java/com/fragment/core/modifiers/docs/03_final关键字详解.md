@@ -293,6 +293,223 @@ public final class Math { }
 public final class System { }
 ```
 
+## final 的作用范围与限制
+
+### 重要概念：final 只限制引用，不限制对象内容
+
+很多人对 `final` 关键字有一个常见的误解：认为 `final` 能让对象完全不可变。实际上：
+
+**final 的真正作用：**
+1. **对于基本类型**：值不可变
+2. **对于引用类型**：引用（内存地址）不可变，但对象内容可以改变
+
+```java
+public class FinalLimitationDemo {
+    
+    // final 引用类型示例
+    private final List<String> list = new ArrayList<>();
+    private final StringBuilder sb = new StringBuilder();
+    private final User user = new User("John");
+    
+    public void demonstrate() {
+        // ✓ 可以修改对象内容
+        list.add("item1");
+        list.add("item2");
+        list.remove(0);
+        list.clear();
+        
+        sb.append("Hello");
+        sb.append(" World");
+        sb.delete(0, 5);
+        
+        user.setName("Jane");
+        user.setAge(30);
+        
+        // ❌ 不能修改引用（重新赋值）
+        // list = new ArrayList<>(); // 编译错误
+        // sb = new StringBuilder(); // 编译错误
+        // user = new User("Mike"); // 编译错误
+    }
+}
+```
+
+### final 作为方法参数
+
+当 `final` 修饰方法参数时，它的限制同样只作用于引用本身，不影响对象内容的修改：
+
+```java
+public class FinalParameterDemo {
+    
+    /**
+     * final 基本类型参数
+     */
+    public void processNumber(final int number) {
+        // ❌ 不能修改参数值
+        // number = number + 1; // 编译错误
+        
+        System.out.println("Number: " + number);
+    }
+    
+    /**
+     * final 引用类型参数 - 可以修改对象内容
+     */
+    public void processList(final List<String> items) {
+        // ✓ 可以修改集合内容
+        items.add("new item");
+        items.remove(0);
+        items.clear();
+        
+        // ❌ 不能修改引用
+        // items = new ArrayList<>(); // 编译错误
+    }
+    
+    /**
+     * final 对象参数 - 可以修改对象属性
+     */
+    public void processUser(final User user) {
+        // ✓ 可以修改对象属性
+        user.setName("New Name");
+        user.setAge(25);
+        user.addRole("ADMIN");
+        
+        // ❌ 不能修改引用
+        // user = new User("Another User"); // 编译错误
+    }
+    
+    /**
+     * 演示：final 参数在方法调用链中的行为
+     */
+    public void updateOrder(final Order order) {
+        // 可以修改 order 的内容
+        order.setStatus("PROCESSING");
+        order.addItem(new OrderItem("Product A", 2));
+        
+        // 传递给其他方法，依然可以修改
+        validateOrder(order);  // 这里可以继续修改 order
+        saveOrder(order);      // 这里也可以继续修改 order
+        
+        // 但不能让 order 指向新对象
+        // order = new Order(); // 编译错误
+    }
+    
+    private void validateOrder(Order order) {
+        order.setValidated(true);
+    }
+    
+    private void saveOrder(Order order) {
+        order.setSaved(true);
+    }
+}
+```
+
+### final 的三个作用层次
+
+```java
+public class FinalScopeDemo {
+    
+    /**
+     * 1. final 修饰类 - 防止继承
+     */
+    public final class CannotExtend {
+        // 这个类不能被继承
+    }
+    
+    /**
+     * 2. final 修饰方法 - 防止重写
+     */
+    public class Parent {
+        public final void cannotOverride() {
+            System.out.println("This method cannot be overridden");
+        }
+    }
+    
+    /**
+     * 3. final 修饰变量 - 防止重新赋值（但不防止内容修改）
+     */
+    public class VariableDemo {
+        private final List<String> list = new ArrayList<>();
+        
+        public void demo() {
+            // 防止重新赋值
+            // list = new ArrayList<>(); // 编译错误
+            
+            // 不防止内容修改
+            list.add("item"); // ✓ 允许
+        }
+    }
+}
+```
+
+### 实际应用场景对比
+
+```java
+public class PracticalComparison {
+    
+    /**
+     * 场景1：final 参数 - 防止方法内部误操作
+     */
+    public void calculateTotal(final List<Product> products) {
+        // final 确保不会意外写成：products = new ArrayList<>();
+        // 但仍然可以修改集合内容
+        
+        BigDecimal total = BigDecimal.ZERO;
+        for (Product p : products) {
+            total = total.add(p.getPrice());
+        }
+        
+        // 如果需要修改，可以正常修改
+        products.forEach(p -> p.setCalculated(true));
+    }
+    
+    /**
+     * 场景2：真正的不可变参数 - 需要额外措施
+     */
+    public void processImmutableList(List<String> items) {
+        // 如果要真正防止修改，需要创建不可变视图
+        List<String> immutableItems = Collections.unmodifiableList(items);
+        
+        // 或者使用防御性复制
+        List<String> copy = new ArrayList<>(items);
+        
+        // 现在可以安全地使用，不会影响原集合
+        copy.add("new item");
+    }
+    
+    /**
+     * 场景3：final 字段 + 不可变集合 = 真正的不可变
+     */
+    public class TrulyImmutable {
+        private final List<String> items;
+        
+        public TrulyImmutable(List<String> items) {
+            // 防御性复制 + 不可变包装
+            this.items = Collections.unmodifiableList(new ArrayList<>(items));
+        }
+        
+        public List<String> getItems() {
+            return items; // 已经是不可变的，可以安全返回
+        }
+    }
+}
+```
+
+### 总结：final 的作用范围
+
+| 修饰对象 | final 的作用 | 不能做的事 | 可以做的事 |
+|---------|-------------|-----------|-----------|
+| **类** | 防止继承 | 不能被继承 | 可以实例化、使用 |
+| **方法** | 防止重写 | 子类不能重写 | 可以被调用、继承 |
+| **基本类型变量** | 值不可变 | 不能重新赋值 | 可以读取 |
+| **引用类型变量** | 引用不可变 | 不能指向新对象 | **可以修改对象内容** |
+| **方法参数** | 参数不可变 | 不能重新赋值 | **引用类型可以修改内容** |
+
+### 关键要点
+
+1. **final 不等于不可变**：final 只保证引用不变，不保证对象内容不变
+2. **参数传递**：final 参数可以防止方法内部重新赋值，但不能防止修改对象内容
+3. **真正的不可变**：需要结合 final + 不可变集合 + 防御性复制
+4. **类的继承**：final 修饰类才能防止继承，修饰变量和方法与继承无关
+
 ## final 与不可变性
 
 ### 完整的不可变类设计
@@ -565,10 +782,10 @@ public abstract class AbstractClass {
 ## 总结
 
 ### final 的优势
-1. **不可变性**：提高代码安全性和线程安全性
+1. **不可变性**：提高代码安全性和线程安全性（需要配合其他措施）
 2. **明确意图**：表明变量、方法、类的不可变性
 3. **性能优化**：JIT 编译器可以进行优化
-4. **防止错误**：编译时检查，防止意外修改
+4. **防止错误**：编译时检查，防止意外修改引用
 
 ### 使用建议
 1. **变量**：尽可能使用 final，特别是参数和局部变量
@@ -576,7 +793,30 @@ public abstract class AbstractClass {
 3. **类**：工具类、值对象、不可变类使用 final
 4. **集合**：使用不可变集合（`Collections.unmodifiable*` 或 `List.of()`）
 
-### 注意事项
-1. final 只保证引用不变，不保证对象内容不变
-2. 过度使用 final 可能降低代码灵活性
-3. 在需要继承和扩展的场景下谨慎使用 final
+### 注意事项（重要！）
+1. **final 只保证引用不变，不保证对象内容不变** - 这是最容易误解的地方
+2. **final 参数可以修改对象内容** - 作为参数传递时，集合内的值依然可以被修改
+3. **防止继承只能用 final 修饰类** - final 修饰变量和方法与继承无关
+4. 过度使用 final 可能降低代码灵活性
+5. 在需要继承和扩展的场景下谨慎使用 final
+
+### 常见误区澄清
+
+```java
+// 误区1：认为 final 集合不能修改
+private final List<String> list = new ArrayList<>();
+// ✓ 实际上可以修改内容
+list.add("item");  // 完全可以！
+
+// 误区2：认为 final 参数能防止对象被修改
+public void process(final List<String> items) {
+    items.add("new");  // ✓ 完全可以修改！
+    // items = new ArrayList<>();  // ✗ 这个才不行
+}
+
+// 误区3：认为 final 只能防止继承
+// 实际上 final 有三个不同的作用：
+// - 修饰类：防止继承
+// - 修饰方法：防止重写
+// - 修饰变量：防止重新赋值（但不防止内容修改）
+```
