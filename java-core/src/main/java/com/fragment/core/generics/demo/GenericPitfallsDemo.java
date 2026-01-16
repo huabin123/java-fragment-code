@@ -1,4 +1,4 @@
-package com.fragment.core.generics;
+package com.fragment.core.generics.demo;
 
 import java.util.ArrayList;
 import java.util.Arrays;

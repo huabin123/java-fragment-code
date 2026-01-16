@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket聊天室</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        .container {
+            width: 90%;
+            max-width: 800px;
+            height: 90vh;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .header {
+            background: #667eea;
+            color: white;
+            padding: 20px;
+            border-radius: 10px 10px 0 0;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 24px;
+            margin-bottom: 5px;
+        }
+        
+        .status {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+        
+        .chat-box {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            background: #f5f5f5;
+        }
+        
+        .message {
+            margin-bottom: 15px;
+            padding: 10px 15px;
+            border-radius: 8px;
+            max-width: 80%;
+            word-wrap: break-word;
+            animation: fadeIn 0.3s;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .message.system {
+            background: #e3f2fd;
+            color: #1976d2;
+            font-style: italic;
+            max-width: 100%;
+            text-align: center;
+        }
+        
+        .message.user {
+            background: #667eea;
+            color: white;
+            margin-left: auto;
+        }
+        
+        .message.other {
+            background: white;
+            border: 1px solid #e0e0e0;
+        }
+        
+        .message.private {
+            background: #fff3e0;
+            border-left: 3px solid #ff9800;
+        }
+        
+        .input-area {
+            padding: 20px;
+            background: white;
+            border-top: 1px solid #e0e0e0;
+            border-radius: 0 0 10px 10px;
+        }
+        
+        .input-group {
+            display: flex;
+            gap: 10px;
+        }
+        
+        #message-input {
+            flex: 1;
+            padding: 12px 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 25px;
+            font-size: 14px;
+            outline: none;
+            transition: border-color 0.3s;
+        }
+        
+        #message-input:focus {
+            border-color: #667eea;
+        }
+        
+        #send-btn {
+            padding: 12px 30px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+            transition: background 0.3s;
+        }
+        
+        #send-btn:hover {
+            background: #5568d3;
+        }
+        
+        #send-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        
+        .help-text {
+            margin-top: 10px;
+            font-size: 12px;
+            color: #666;
+            text-align: center;
+        }
+        
+        .help-text code {
+            background: #f5f5f5;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>💬 WebSocket聊天室</h1>
+            <div class="status" id="status">正在连接...</div>
+        </div>
+        
+        <div class="chat-box" id="chat-box"></div>
+        
+        <div class="input-area">
+            <div class="input-group">
+                <input type="text" id="message-input" placeholder="输入消息..." disabled>
+                <button id="send-btn" disabled>发送</button>
+            </div>
+            <div class="help-text">
+                命令：<code>/name 用户名</code> <code>/list</code> <code>/to 用户名 消息</code>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        let ws = null;
+        const chatBox = document.getElementById('chat-box');
+        const messageInput = document.getElementById('message-input');
+        const sendBtn = document.getElementById('send-btn');
+        const statusDiv = document.getElementById('status');
+        
+        // 连接WebSocket
+        function connect() {
+            ws = new WebSocket('ws://localhost:8080/ws');
+            
+            ws.onopen = function() {
+                statusDiv.textContent = '✓ 已连接';
+                statusDiv.style.color = '#4caf50';
+                messageInput.disabled = false;
+                sendBtn.disabled = false;
+                addMessage('系统', '连接成功！请设置用户名：/name 你的名字', 'system');
+            };
+            
+            ws.onmessage = function(event) {
+                const message = event.data;
+                
+                if (message.startsWith('[系统]')) {
+                    addMessage('系统', message.substring(4), 'system');
+                } else if (message.startsWith('[私聊]')) {
+                    addMessage('私聊', message.substring(4), 'private');
+                } else {
+                    // 解析消息格式：[用户名] 消息内容
+                    const match = message.match(/^\[(.+?)\] (.+)$/);
+                    if (match) {
+                        addMessage(match[1], match[2], 'other');
+                    } else {
+                        addMessage('', message, 'other');
+                    }
+                }
+            };
+            
+            ws.onclose = function() {
+                statusDiv.textContent = '✗ 连接断开';
+                statusDiv.style.color = '#f44336';
+                messageInput.disabled = true;
+                sendBtn.disabled = true;
+                addMessage('系统', '连接已断开', 'system');
+            };
+            
+            ws.onerror = function(error) {
+                console.error('WebSocket错误:', error);
+                addMessage('系统', '连接错误', 'system');
+            };
+        }
+        
+        // 添加消息到聊天框
+        function addMessage(sender, text, type) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message ' + type;
+            
+            if (type === 'system') {
+                messageDiv.textContent = text;
+            } else if (type === 'private') {
+                messageDiv.textContent = text;
+            } else {
+                messageDiv.innerHTML = `<strong>${sender}:</strong> ${text}`;
+            }
+            
+            chatBox.appendChild(messageDiv);
+            chatBox.scrollTop = chatBox.scrollHeight;
+        }
+        
+        // 发送消息
+        function sendMessage() {
+            const message = messageInput.value.trim();
+            if (message && ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(message);
+                
+                // 如果不是命令，显示在聊天框
+                if (!message.startsWith('/')) {
+                    addMessage('我', message, 'user');
+                }
+                
+                messageInput.value = '';
+            }
+        }
+        
+        // 事件监听
+        sendBtn.onclick = sendMessage;
+        
+        messageInput.onkeypress = function(event) {
+            if (event.key === 'Enter') {
+                sendMessage();
+            }
+        };
+        
+        // 启动连接
+        connect();
+    </script>
+</body>
+</html>

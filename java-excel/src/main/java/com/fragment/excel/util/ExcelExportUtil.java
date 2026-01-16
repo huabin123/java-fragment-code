@@ -1,8 +1,6 @@
 package com.fragment.excel.util;
 
 import com.alibaba.excel.EasyExcel;
-import com.alibaba.excel.annotation.ExcelProperty;
-import com.alibaba.excel.annotation.format.DateTimeFormat;
 import com.alibaba.excel.write.metadata.style.WriteCellStyle;
 import com.alibaba.excel.write.metadata.style.WriteFont;
 import com.alibaba.excel.write.style.HorizontalCellStyleStrategy;
@@ -45,6 +43,7 @@ public class ExcelExportUtil {
             HorizontalCellStyleStrategy styleStrategy = createCellStyle();
             
             // 5. 导出Excel
+            // 注意：由于使用Map格式且已手动格式化日期，不需要注册日期转换器
             EasyExcel.write(fileName)
                     .head(headers)
                     .sheet("数据导出")
@@ -94,9 +93,11 @@ public class ExcelExportUtil {
                     Object value = fieldInfo.field.get(item);
                     
                     // 处理日期格式化
+                    // 由于使用Map导出，无法利用EasyExcel的注解，需要手动格式化
                     if (value instanceof Date) {
                         Date dateValue = (Date) value;
-                        SimpleDateFormat sdf = new SimpleDateFormat(fieldInfo.annotation.dateFormat());
+                        String dateFormat = fieldInfo.annotation.dateFormat();
+                        SimpleDateFormat sdf = new SimpleDateFormat(dateFormat);
                         value = sdf.format(dateValue);
                     }
                     

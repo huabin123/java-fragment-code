@@ -1,4 +1,4 @@
-package com.fragment.core.generics;
+package com.fragment.core.generics.demo;
 
 import java.lang.reflect.Method;
 import java.util.ArrayList;
