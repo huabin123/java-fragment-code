@@ -3,6 +3,9 @@ package com.example.jvm.gc.project;
 import java.lang.management.*;
 import java.util.*;
 import java.util.concurrent.*;
+import javax.management.NotificationEmitter;
+import javax.management.openmbean.CompositeData;
+import com.sun.management.GarbageCollectionNotificationInfo;
 
 /**
  * GC监控工具实战项目

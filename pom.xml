@@ -16,6 +16,7 @@
         <module>java-excel</module>
         <module>java-convetor</module>
         <module>java-io</module>
+        <module>java-jvm</module>
     </modules>
 
     <properties>
