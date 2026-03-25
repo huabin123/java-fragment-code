@@ -94,6 +94,44 @@ java -XX:+PrintCompilation MyApp
 
 ---
 
+## 🔗 相关代码示例
+
+本文档对应的代码示例位于：
+
+### 📝 Demo代码
+- **[JITDemo.java](../../../java/com/fragment/jvm/advanced/demo/JITDemo.java)** - JIT编译器演示
+  - ✅ JIT编译触发演示
+  - ✅ 方法内联演示
+  - ✅ 解释执行 vs JIT编译性能对比
+  - ✅ 编译日志分析
+
+**运行方式：**
+```bash
+# 查看编译信息
+java -XX:+PrintCompilation \
+     com.example.jvm.advanced.demo.JITDemo
+
+# 查看内联信息
+java -XX:+PrintCompilation \
+     -XX:+UnlockDiagnosticVMOptions \
+     -XX:+PrintInlining \
+     com.example.jvm.advanced.demo.JITDemo
+
+# 设置编译阈值
+java -XX:CompileThreshold=1000 \
+     -XX:+PrintCompilation \
+     com.example.jvm.advanced.demo.JITDemo
+```
+
+### 🚀 项目代码
+- **[JVMProfiler.java](../../../java/com/fragment/jvm/advanced/project/JVMProfiler.java)** - JVM性能分析器
+  - ✅ JIT编译监控
+  - ✅ 代码缓存监控
+  - ✅ 优化配置检测
+  - ✅ 性能报告生成
+
+---
+
 ## 📚 概述
 
 JIT（Just-In-Time）即时编译器是JVM性能优化的核心技术之一。它在程序运行时将热点代码编译成本地机器码，显著提升执行效率。本文从架构师视角深入讲解JIT编译器的工作原理和优化技术。

@@ -1,5 +1,43 @@
 # JVM内存结构详解
 
+## 🔗 相关代码示例
+
+本文档对应的代码示例位于：
+
+### 📝 Demo代码
+- **[MemoryStructureDemo.java](../../../java/com/fragment/jvm/memory/demo/MemoryStructureDemo.java)** - 内存结构演示
+  - ✅ 堆内存结构演示
+  - ✅ 栈内存演示
+  - ✅ 方法区演示
+  - ✅ 内存使用监控
+
+**运行方式：**
+```bash
+# 基本运行
+java -Xms256m -Xmx256m -Xss256k MemoryStructureDemo
+
+# 查看内存详细信息
+java -Xms256m -Xmx256m \
+     -XX:+PrintGCDetails \
+     -XX:+PrintGCDateStamps \
+     MemoryStructureDemo
+
+# 监控元空间
+java -XX:MetaspaceSize=128m \
+     -XX:MaxMetaspaceSize=256m \
+     -XX:+TraceClassLoading \
+     MemoryStructureDemo
+```
+
+### 🚀 项目代码
+- **[MemoryMonitor.java](../../../java/com/fragment/jvm/memory/project/MemoryMonitor.java)** - 内存监控工具
+  - ✅ 实时监控堆内存
+  - ✅ 监控元空间
+  - ✅ 监控GC情况
+  - ✅ 监控线程情况
+
+---
+
 ## 1. 为什么需要了解JVM内存结构？
 
 ### 1.1 问题1：不了解内存结构会遇到什么问题？
@@ -33,17 +71,6 @@ while (true) {
 **了解内存结构的好处**：
 - ✅ 理解内存分配机制
 - ✅ 快速定位内存问题
-- ✅ 合理配置JVM参数
-- ✅ 优化程序性能
-
----
-
-## 2. JVM内存结构总览
-
-### 2.1 问题2：JVM内存是如何划分的？
-
-**JVM内存结构图**：
-
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                        JVM内存结构                           │

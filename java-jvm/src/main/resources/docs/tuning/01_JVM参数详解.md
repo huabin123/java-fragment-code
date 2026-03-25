@@ -1,5 +1,156 @@
 # JVM参数详解
 
+## 💡 大白话精华总结
+
+**JVM参数是什么？**
+- 就是启动Java程序时给JVM的"指令"，告诉它怎么工作
+- 就像开车前调整座椅、后视镜，让车更好开
+
+**为什么要配置JVM参数？**
+```
+不配置的问题：
+- 堆内存太小 → 频繁GC，甚至OOM
+- GC收集器不合适 → 停顿时间长
+- 没有日志 → 出问题无法排查
+
+配置后的好处：
+- 性能提升 → 减少GC，提高吞吐量
+- 稳定性提升 → 避免OOM
+- 可观测性 → 有日志可以排查问题
+```
+
+**JVM参数的3大类：**
+
+**1. 标准参数（-）**
+```bash
+-version          # 查看JVM版本
+-cp / -classpath  # 设置类路径
+-D<name>=<value>  # 设置系统属性
+
+特点：所有JVM都支持，不会变
+```
+
+**2. 非标准参数（-X）**
+```bash
+-Xms512m          # 初始堆大小
+-Xmx2g            # 最大堆大小
+-Xss256k          # 线程栈大小
+-Xmn512m          # 新生代大小
+
+特点：常用但不保证所有JVM都支持
+```
+
+**3. 高级参数（-XX:）**
+```bash
+-XX:+UseG1GC              # 使用G1收集器
+-XX:MaxGCPauseMillis=200  # 最大GC停顿时间
+-XX:+PrintGCDetails       # 打印GC详情
+-XX:+HeapDumpOnOutOfMemoryError  # OOM时生成堆转储
+
+特点：
++ 表示启用
+- 表示禁用
+= 表示设置值
+```
+
+**生产环境必备参数（5大类）：**
+
+**1. 内存参数**
+```bash
+-Xms4g                    # 初始堆 = 最大堆（避免动态扩容）
+-Xmx4g                    # 最大堆
+-Xmn2g                    # 新生代（堆的1/2或1/3）
+-Xss256k                  # 线程栈（默认1M太大）
+-XX:MetaspaceSize=256m    # 元空间初始大小
+-XX:MaxMetaspaceSize=512m # 元空间最大大小
+```
+
+**2. GC参数**
+```bash
+# 选择GC收集器
+-XX:+UseG1GC              # 使用G1（推荐）
+-XX:MaxGCPauseMillis=200  # 最大停顿200ms
+-XX:G1HeapRegionSize=16m  # Region大小
+
+# 或使用ZGC（超低延迟）
+-XX:+UseZGC
+```
+
+**3. GC日志参数**
+```bash
+# JDK 8
+-XX:+PrintGCDetails
+-XX:+PrintGCDateStamps
+-Xloggc:/path/to/gc.log
+
+# JDK 9+
+-Xlog:gc*:file=/path/to/gc.log:time,tags,level
+```
+
+**4. OOM参数**
+```bash
+-XX:+HeapDumpOnOutOfMemoryError        # OOM时生成堆转储
+-XX:HeapDumpPath=/path/to/dump.hprof   # 堆转储文件路径
+-XX:+ExitOnOutOfMemoryError            # OOM时退出JVM
+```
+
+**5. JIT参数**
+```bash
+-XX:+TieredCompilation    # 分层编译（默认开启）
+-XX:+PrintCompilation     # 打印编译信息
+```
+
+**参数配置示例（4G堆）：**
+```bash
+java -Xms4g \
+     -Xmx4g \
+     -Xmn2g \
+     -Xss256k \
+     -XX:MetaspaceSize=256m \
+     -XX:MaxMetaspaceSize=512m \
+     -XX:+UseG1GC \
+     -XX:MaxGCPauseMillis=200 \
+     -XX:+HeapDumpOnOutOfMemoryError \
+     -XX:HeapDumpPath=/data/logs/dump.hprof \
+     -Xlog:gc*:file=/data/logs/gc.log:time,tags,level \
+     -jar myapp.jar
+```
+
+**如何选择堆大小？**
+```
+小应用（< 2G数据）：
+-Xms1g -Xmx1g
+
+中型应用（2-8G数据）：
+-Xms4g -Xmx4g
+
+大型应用（> 8G数据）：
+-Xms8g -Xmx8g 或更大
+
+原则：
+1. Xms = Xmx（避免动态扩容）
+2. 新生代 = 堆的1/2或1/3
+3. 不要超过物理内存的70%
+4. 考虑容器限制
+```
+
+**如何验证参数生效？**
+```bash
+# 查看JVM参数
+jinfo -flags <pid>
+
+# 查看所有参数（包括默认值）
+java -XX:+PrintFlagsFinal -version | grep <参数名>
+
+# 查看GC收集器
+jinfo -flag UseG1GC <pid>
+```
+
+**一句话记住：**
+> 生产环境必配：内存参数、GC参数、GC日志、OOM堆转储，Xms=Xmx避免扩容！
+
+---
+
 ## 📚 概述
 
 JVM参数是控制JVM行为的重要手段，合理配置JVM参数可以显著提升应用性能。本文从架构师视角深入讲解JVM参数的分类、作用和最佳实践。

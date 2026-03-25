@@ -1,5 +1,236 @@
 # TLAB与对象分配
 
+## 💡 大白话精华总结
+
+**TLAB是什么？**
+- TLAB = Thread Local Allocation Buffer（线程本地分配缓冲区）
+- 就是给每个线程分配一块私有内存，用来快速创建对象
+- 就像每个人有自己的工作台，不用排队等公共工作台
+
+**为什么需要TLAB？**
+```
+没有TLAB的问题：
+多个线程创建对象 → 都在堆上分配 → 需要排队（同步）→ 慢！
+
+有了TLAB：
+每个线程有自己的TLAB → 在自己的TLAB创建对象 → 不用排队 → 快！
+
+比喻：
+没有TLAB = 大家共用一个收银台，要排队
+有TLAB = 每人有自己的收银台，不用排队
+```
+
+**TLAB工作原理：**
+```
+线程创建对象：
+    ↓
+1. 对象小吗？
+    ↓
+  是 │ 否（大对象）
+    │  └→ 直接在堆上分配（需要同步）
+    ↓
+2. TLAB有空间吗？
+    ↓
+  是 │ 否
+    │  └→ 重新分配TLAB或在堆上分配
+    ↓
+3. 指针碰撞分配
+   top += 对象大小
+    ↓
+返回对象地址（超快！无锁！）
+```
+
+**指针碰撞分配（核心技术）：**
+```
+TLAB结构：
+┌─────────────────────────────┐
+│ 已使用 │ 空闲空间            │
+└────────┴─────────────────────┘
+↑        ↑                     ↑
+start    top                   end
+
+分配对象：
+1. 计算对象大小：16字节
+2. 检查空间：top + 16 <= end？
+3. 分配：result = top; top += 16;
+4. 返回：result
+
+速度：O(1)，几个CPU指令就完成！
+```
+
+**对象分配优先级：**
+```
+优先级从高到低：
+
+1. 栈上分配（标量替换）
+   - 最快
+   - 对象不逃逸
+   - 方法结束自动回收
+
+2. TLAB分配
+   - 很快
+   - 小对象
+   - 无锁操作
+
+3. Eden区分配
+   - 较快
+   - 大对象或TLAB满了
+   - 需要CAS同步
+
+4. 老年代分配
+   - 慢
+   - 超大对象
+   - 可能触发Full GC
+```
+
+**TLAB大小：**
+```
+计算公式：
+TLAB大小 = Eden区大小 / (线程数 × 目标分配次数)
+
+示例：
+Eden区：100MB
+线程数：10个
+目标次数：100次
+TLAB大小 = 100MB / (10 × 100) = 100KB
+
+动态调整：
+- 分配快 → 增大TLAB
+- 分配慢 → 减小TLAB
+- 浪费多 → 调整策略
+```
+
+**性能对比：**
+```
+测试：1000个线程，每个创建10000个对象
+
+不使用TLAB：
+- 时间：5000ms
+- 线程竞争：严重
+- CAS失败率：30%
+
+使用TLAB：
+- 时间：500ms
+- 线程竞争：无
+- CAS失败率：0%
+
+性能提升：10倍！
+```
+
+**TLAB浪费：**
+```
+浪费场景1：TLAB剩余空间不够
+┌─────────────────────────────┐
+│ 已使用 │ 剩余5字节 │         │
+└────────┴──────────┴─────────┘
+         ↑
+      对象需要16字节，放不下
+      剩余5字节浪费了
+
+浪费场景2：线程结束
+┌─────────────────────────────┐
+│ 已使用 │ 未使用空间          │
+└────────┴─────────────────────┘
+         ↑
+      线程结束，剩余空间浪费
+
+控制：
+-XX:TLABWasteTargetPercent=1  # 允许浪费1%
+```
+
+**TLAB参数：**
+```bash
+# 启用TLAB（默认开启）
+-XX:+UseTLAB
+
+# 打印TLAB统计
+-XX:+PrintTLAB
+
+# TLAB大小（0=自动）
+-XX:TLABSize=0
+
+# 浪费目标百分比
+-XX:TLABWasteTargetPercent=1
+```
+
+**监控指标：**
+```
+关键指标：
+1. fast比例：TLAB分配比例（目标 > 95%）
+2. slow比例：共享区分配比例（目标 < 5%）
+3. waste：浪费空间（目标 < 5%）
+
+示例输出：
+fast: 0.95   # 95%在TLAB分配 ✓
+slow: 0.05   # 5%在共享区分配 ✓
+waste: 2KB   # 浪费2KB ✓
+```
+
+**一句话记住：**
+> TLAB就是给每个线程一块私有内存，创建对象时不用排队，速度提升10倍！
+
+**最佳实践：**
+```
+1. 使用默认配置（JVM会自动调整）
+2. 合理设置Eden区大小
+3. 控制线程数量（使用线程池）
+4. 避免创建大对象
+5. 监控TLAB命中率
+```
+
+---
+
+## 🔗 相关代码示例
+
+本文档对应的代码示例位于：
+
+### 📝 Demo代码
+
+#### 1. 内存结构演示
+- **[MemoryStructureDemo.java](../../../java/com/fragment/jvm/memory/demo/MemoryStructureDemo.java)** - 内存结构演示
+  - ✅ 堆内存结构演示
+  - ✅ TLAB分配演示
+  - ✅ 对象分配流程演示
+  - ✅ 内存使用监控
+
+**运行方式：**
+```bash
+# 打印TLAB统计
+java -XX:+PrintTLAB \
+     -XX:+UnlockDiagnosticVMOptions \
+     MemoryStructureDemo
+
+# 禁用TLAB对比
+java -XX:-UseTLAB \
+     -XX:+PrintGC \
+     MemoryStructureDemo
+
+# 设置TLAB大小
+java -XX:TLABSize=256k \
+     -XX:+PrintTLAB \
+     MemoryStructureDemo
+```
+
+#### 2. 对象布局演示
+- **[ObjectLayoutDemo.java](../../../java/com/fragment/jvm/memory/demo/ObjectLayoutDemo.java)** - 对象布局演示
+  - ✅ 对象头信息
+  - ✅ 对象大小计算
+  - ✅ 对齐填充演示
+  - ✅ 指针压缩演示
+
+#### 3. 逃逸分析与对象分配
+- **[EscapeAnalysisDemo.java](../../../java/com/fragment/jvm/memory/demo/EscapeAnalysisDemo.java)** - 逃逸分析演示
+  - ✅ 栈上分配 vs 堆上分配
+  - ✅ TLAB分配性能测试
+  - ✅ 对象分配优化演示
+
+### 🚀 项目代码
+- **[JVMProfiler.java](../../../java/com/fragment/jvm/advanced/project/JVMProfiler.java)** - JVM性能分析器
+  - ✅ TLAB使用监控
+  - ✅ 内存分配分析
+
+---
+
 ## 📚 概述
 
 TLAB（Thread Local Allocation Buffer）是JVM在堆内存中为每个线程预分配的私有缓冲区，用于提升对象分配效率。本文从架构师视角深入讲解TLAB的工作原理和对象分配策略。
