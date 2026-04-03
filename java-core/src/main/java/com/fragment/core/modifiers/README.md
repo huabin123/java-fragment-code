@@ -8,21 +8,9 @@
 modifiers/
 ├── docs/                           # 文档目录
 │   ├── 01_访问修饰符详解.md        # public, protected, default, private
-│   ├── 02_static关键字详解.md      # static 变量、方法、代码块、内部类
-│   └── 03_final关键字详解.md       # final 变量、方法、类
-├── AccessModifierDemo.java         # 访问修饰符演示
-├── SamePackageAccess.java          # 同包访问演示
-├── subpackage/
-│   ├── SubclassAccess.java        # 子类访问演示（不同包）
-│   └── DifferentPackageAccess.java # 不同包访问演示
-├── StaticDemo.java                 # static 关键字演示
-├── FinalDemo.java                  # final 关键字演示
-├── CombinedModifiersDemo.java      # 组合修饰符演示
 └── README.md                       # 本文件
-```
 
 ## 📖 学习指南
-
 ### 1. 访问修饰符（Access Modifiers）
 
 **阅读顺序：**
@@ -67,12 +55,14 @@ javac subpackage/DifferentPackageAccess.java && java com.fragment.core.modifiers
 **阅读顺序：**
 1. 📄 `docs/02_static关键字详解.md` - 理论基础
 2. 💻 `StaticDemo.java` - 完整演示
+3. ⚠️ `StaticVariableInInstanceMethodDemo.java` - **重要：实例方法中不建议对static变量赋值**
 
 **核心概念：**
 - **静态变量**：类级别共享，所有实例共用一份
 - **静态方法**：不依赖实例，通过类名调用
 - **静态代码块**：类加载时执行一次，用于初始化
 - **静态内部类**：不持有外部类引用，更节省内存
+- ⚠️ **重要警告**：实例方法中修改static变量会导致状态污染和线程安全问题
 
 **关键特性：**
 - 静态成员属于类，不属于实例
@@ -89,7 +79,11 @@ javac subpackage/DifferentPackageAccess.java && java com.fragment.core.modifiers
 
 **运行示例：**
 ```bash
+# 基础演示
 javac StaticDemo.java && java com.fragment.core.modifiers.StaticDemo
+
+# ⚠️ 重要：实例方法中不建议对static变量赋值的演示
+javac StaticVariableInInstanceMethodDemo.java && java com.fragment.core.modifiers.StaticVariableInInstanceMethodDemo
 ```
 
 ### 3. final 关键字
@@ -184,6 +178,11 @@ javac CombinedModifiersDemo.java && java com.fragment.core.modifiers.CombinedMod
 2. **工具方法**：使用 `public static`，私有构造器防止实例化
 3. **线程安全**：静态变量在多线程环境下需要同步
 4. **避免滥用**：过多静态成员降低可测试性
+5. ⚠️ **实例方法操作规则**：
+   - ✅ 实例方法可以**读取**static变量
+   - ✅ static方法应该**修改**static变量
+   - ⚠️ 实例方法**修改**static变量需谨慎（除构造器计数外）
+   - ❌ 避免在普通实例方法中随意修改static变量
 
 ### final 最佳实践
 1. **优先使用 final**：局部变量、参数尽可能使用 final
@@ -215,6 +214,21 @@ javac CombinedModifiersDemo.java && java com.fragment.core.modifiers.CombinedMod
 ### Q5: static 和 final 可以一起使用吗？
 - 可以，`public static final` 是最常见的常量定义方式
 - 例如：`public static final int MAX_SIZE = 100;`
+
+### Q6: 为什么实例方法中不建议对static变量赋值？⚠️
+**问题根源**：
+1. **状态污染**：修改static变量会影响所有实例，导致数据不一致
+2. **线程安全**：多线程环境下会产生竞态条件
+3. **语义混乱**：实例方法应该操作实例状态，不应该修改类级别状态
+4. **测试困难**：测试用例之间会产生不期望的依赖关系
+
+**正确做法**：
+- ✅ 使用实例变量存储实例独立状态
+- ✅ 使用ThreadLocal实现线程隔离
+- ✅ 使用static方法修改static变量
+- ✅ 在构造器中修改static计数器（特殊场景）
+
+**详细说明**：参见 `StaticVariableInInstanceMethodDemo.java` 和 `docs/02_static关键字详解.md` 第5节
 
 ## 📚 扩展阅读
 

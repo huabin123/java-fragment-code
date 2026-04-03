@@ -9,11 +9,12 @@
 ```
 nio/
 ├── docs/                                    # 文档目录
-│   ├── 01_NIO核心概念与Buffer.md             # 第一章：NIO基础和Buffer详解
-│   ├── 02_Channel与文件操作.md               # 第二章：Channel通道和文件I/O
-│   ├── 03_Selector与多路复用.md              # 第三章：Selector选择器和网络编程
-│   ├── 04_零拷贝与Reactor模式.md             # 第四章：高级特性和设计模式
-│   └── 05_实战项目使用指南.md                # 第五章：实战项目详细使用指南
+│   ├── 01_NIO核心概念.md                     # 第一章：NIO基础和核心思想
+│   ├── 02_Buffer深度剖析.md                  # 第二章：Buffer详解
+│   ├── 03_Channel与文件操作.md               # 第三章：Channel通道和文件I/O
+│   ├── 04_Selector与多路复用.md              # 第四章：Selector选择器和网络编程
+│   ├── 05_零拷贝与Reactor模式.md             # 第五章：高级特性和设计模式
+│   └── 06_实战项目使用指南.md                # 第六章：实战项目详细使用指南
 ├── demo/                                    # 演示代码
 │   ├── BufferDemo.java                      # Buffer操作演示
 │   ├── ChannelDemo.java                     # Channel操作演示
@@ -33,31 +34,53 @@ nio/
 
 ## 🎯 学习路径
 
-### 阶段1：理解NIO核心概念和Buffer（第1章）
+### 阶段1：理解NIO核心概念（第1章）
 
 **核心问题**：
 - 什么是NIO？为什么需要NIO？
 - BIO的问题是什么？NIO如何解决？
+- NIO的三大核心组件是什么？
+- Channel、Buffer、Selector如何协作？
+- 为什么需要Buffer这个中间层？
+
+**学习方式**：
+1. 阅读 `docs/01_NIO核心概念.md`
+2. 理解BIO的痛点和NIO的解决方案
+3. 掌握三大核心组件的协作流程
+4. 理解"快递站"类比，建立直观认识
+
+**关键收获**：
+- ✅ 理解NIO的设计思想
+- ✅ 掌握三大核心组件的职责
+- ✅ 理解I/O多路复用的原理
+- ✅ 建立NIO的整体认知
+
+---
+
+### 阶段2：深入Buffer（第2章）
+
+**核心问题**：
 - Buffer的工作原理是什么？
 - position、limit、capacity三个指针如何协作？
 - DirectBuffer和HeapBuffer有什么区别？
 - flip()、clear()、compact()有什么区别？
+- Buffer有哪些常见陷阱？
 
 **学习方式**：
-1. 阅读 `docs/01_NIO核心概念与Buffer.md`
+1. 阅读 `docs/02_Buffer深度剖析.md`
 2. 运行 `demo/BufferDemo.java`
 3. 画图理解Buffer的状态变化
 4. 实践Buffer的各种操作
 
 **关键收获**：
-- ✅ 理解NIO的设计思想
 - ✅ 掌握Buffer的工作原理
 - ✅ 熟练使用Buffer的核心方法
 - ✅ 理解直接内存和堆内存的区别
+- ✅ 避免Buffer的常见陷阱
 
 ---
 
-### 阶段2：掌握Channel和文件操作（第2章）
+### 阶段3：掌握Channel和文件操作（第3章）
 
 **核心问题**：
 - Channel和Stream有什么区别？
@@ -67,7 +90,7 @@ nio/
 - Channel的scatter/gather操作是什么？
 
 **学习方式**：
-1. 阅读 `docs/02_Channel与文件操作.md`
+1. 阅读 `docs/03_Channel与文件操作.md`
 2. 运行 `demo/ChannelDemo.java`
 3. 实践文件复制、内存映射等操作
 4. 对比BIO和NIO的文件操作性能
@@ -80,7 +103,7 @@ nio/
 
 ---
 
-### 阶段3：掌握Selector和多路复用（第3章）⭐⭐⭐
+### 阶段4：掌握Selector和多路复用（第4章）⭐⭐⭐
 
 **核心问题**：
 - 什么是多路复用？
@@ -91,7 +114,7 @@ nio/
 - NIO的空轮询Bug是什么？如何解决？
 
 **学习方式**：
-1. 阅读 `docs/03_Selector与多路复用.md`
+1. 阅读 `docs/04_Selector与多路复用.md`
 2. 运行 `demo/SelectorDemo.java`
 3. 实现一个简单的Echo服务器
 4. 理解操作系统层面的多路复用机制
@@ -104,7 +127,7 @@ nio/
 
 ---
 
-### 阶段4：掌握零拷贝和Reactor模式（第4章）⭐⭐⭐⭐
+### 阶段5：掌握零拷贝和Reactor模式（第5章）⭐⭐⭐⭐
 
 **核心问题**：
 - 什么是零拷贝？减少了几次拷贝？
@@ -114,7 +137,7 @@ nio/
 - 如何设计高性能的NIO服务器？
 
 **学习方式**：
-1. 阅读 `docs/04_零拷贝与Reactor模式.md`
+1. 阅读 `docs/05_零拷贝与Reactor模式.md`
 2. 运行 `demo/ZeroCopyDemo.java` - 零拷贝技术对比
 3. 运行 `demo/ReactorDemo.java` - Reactor模式三种形态
 4. 运行 `project/NIOChatServer.java` + `NIOChatClient.java` - 聊天室实战
@@ -596,7 +619,7 @@ http://localhost:8080/
 
 ## 📝 快速开始
 
-**第一步**：从 `docs/01_NIO核心概念与Buffer.md` 开始，理解NIO的设计思想！
+**第一步**：从 `docs/01_NIO核心概念.md` 开始，理解NIO的设计思想！
 
 **第二步**：运行每个demo，观察输出，理解原理
 

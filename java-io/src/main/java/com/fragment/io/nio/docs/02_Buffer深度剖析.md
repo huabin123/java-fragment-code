@@ -1,260 +1,12 @@
-# 第1章：NIO核心概念与Buffer深度剖析
+# 第2章：Buffer深度剖析
 
-> **本章目标**：从问题出发，深入理解为什么需要NIO、NIO的设计思想以及Buffer的工作原理
-
----
-
-## 一、为什么需要NIO？—— 从BIO的痛点说起
-
-### 1.1 问题的起源：BIO在高并发场景下的困境
-
-#### 问题1：假设我们要开发一个支持10000并发连接的服务器，使用BIO会遇到什么问题？
-
-让我们先看传统BIO的实现方式：
-
-```java
-// BIO服务器：一线程一连接模型
-ServerSocket serverSocket = new ServerSocket(8080);
-ExecutorService executor = Executors.newFixedThreadPool(10000);
-
-while (true) {
-    Socket socket = serverSocket.accept();  // 阻塞等待连接
-    
-    executor.submit(() -> {
-        try {
-            InputStream in = socket.getInputStream();
-            OutputStream out = socket.getOutputStream();
-            
-            byte[] buffer = new byte[1024];
-            int len = in.read(buffer);  // 阻塞等待数据
-            
-            // 处理请求
-            out.write(response);
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-    });
-}
-```
-
-**资源消耗分析**：
-
-```
-场景假设：
-- 并发连接数：10000
-- 每个线程栈大小：1MB（JVM默认）
-- 每个连接平均存活时间：30秒
-- 每秒新建连接数：100
-
-资源消耗：
-1. 内存消耗：10000线程 × 1MB = 10GB（仅线程栈）
-2. 线程创建开销：100次/秒 × 线程创建时间
-3. 线程上下文切换：10000个线程频繁切换
-4. CPU利用率：大量时间浪费在阻塞等待上
-```
-
-#### 问题2：为什么线程会阻塞？阻塞在哪里？
-
-**BIO的两个阻塞点**：
-
-```
-阻塞点1：accept()等待连接
-┌─────────────────────────────────────┐
-│  ServerSocket.accept()              │
-│  ↓                                  │
-│  等待客户端连接...（阻塞）           │
-│  ↓                                  │
-│  有连接到达，返回Socket              │
-└─────────────────────────────────────┘
-
-阻塞点2：read()等待数据
-┌─────────────────────────────────────┐
-│  InputStream.read()                 │
-│  ↓                                  │
-│  等待数据到达...（阻塞）             │
-│  ↓                                  │
-│  数据到达，返回读取的字节数          │
-└─────────────────────────────────────┘
-```
-
-**底层原理**：
-```
-用户空间                    内核空间
-┌──────────┐              ┌──────────┐
-│  线程A   │              │          │
-│  read()  │─────阻塞────→│ 等待数据 │
-│          │              │          │
-└──────────┘              └──────────┘
-     ↑                          │
-     │                          │ 数据到达
-     │                          ↓
-     └──────────唤醒────────────┘
-
-问题：线程在等待期间无法做其他事情，CPU资源被浪费
-```
-
-#### 问题3：如果不为每个连接创建线程，会怎样？
-
-```java
-// 单线程处理所有连接
-ServerSocket serverSocket = new ServerSocket(8080);
-List<Socket> clients = new ArrayList<>();
-
-while (true) {
-    Socket socket = serverSocket.accept();  // 阻塞！
-    clients.add(socket);
-    
-    // 问题：accept()阻塞时，无法处理已有连接的数据
-    for (Socket client : clients) {
-        int len = client.getInputStream().read(buffer);  // 阻塞！
-        // 处理数据
-    }
-}
-```
-
-**困境**：
-- 如果在accept()阻塞，已有连接的数据无法及时处理
-- 如果在read()阻塞，新连接无法接入
-- **核心问题**：阻塞式I/O无法在单线程中同时处理多个连接
-
-### 1.2 解决方案的演进
-
-#### 方案1：多线程模型（BIO的优化）
-
-```
-优点：
-✓ 每个连接独立处理，互不影响
-✓ 编程模型简单，易于理解
-
-缺点：
-✗ 线程数受限（通常不超过几千）
-✗ 内存消耗大（每个线程1MB栈空间）
-✗ 上下文切换开销大
-✗ 无法支持万级并发
-```
-
-#### 方案2：非阻塞I/O + 轮询（早期尝试）
-
-```java
-// 设置为非阻塞模式
-socket.configureBlocking(false);
-
-while (true) {
-    for (Socket socket : clients) {
-        int len = socket.getInputStream().read(buffer);
-        if (len > 0) {
-            // 有数据，处理
-        }
-        // 没数据，继续轮询下一个
-    }
-}
-```
-
-**问题**：
-- CPU空转，利用率100%但没做有效工作
-- 轮询效率低，延迟高
-
-#### 方案3：I/O多路复用（NIO的核心）
-
-```
-核心思想：让操作系统帮我们监听多个Socket，哪个有事件就通知我们
-
-┌─────────────────────────────────────────────┐
-│              应用程序（单线程）              │
-└─────────────────┬───────────────────────────┘
-                  │
-                  │ 注册监听
-                  ↓
-┌─────────────────────────────────────────────┐
-│           Selector（选择器）                 │
-│  监听：Socket1, Socket2, Socket3, ...       │
-└─────────────────┬───────────────────────────┘
-                  │
-                  │ 系统调用（select/epoll）
-                  ↓
-┌─────────────────────────────────────────────┐
-│              操作系统内核                    │
-│  监听多个文件描述符，有事件时返回            │
-└─────────────────────────────────────────────┘
-
-优势：
-✓ 单线程管理多个连接
-✓ 只处理就绪的连接，不浪费CPU
-✓ 支持万级并发
-✓ 内存消耗低
-```
+> **本章目标**：深入理解Buffer的工作原理、掌握Buffer的使用技巧、避免常见陷阱
 
 ---
 
-## 二、NIO的核心设计思想
+## 一、为什么需要Buffer？
 
-### 2.1 问题：NIO是如何实现非阻塞的？
-
-**关键设计**：
-
-```
-1. Channel（通道）：可配置为非阻塞模式
-   channel.configureBlocking(false);
-
-2. Selector（选择器）：监听多个Channel的事件
-   selector.select();  // 阻塞等待事件，但可以监听多个Channel
-
-3. Buffer（缓冲区）：数据容器，支持读写模式切换
-   buffer.flip();  // 写模式 → 读模式
-```
-
-### 2.2 NIO三大核心组件的协作流程
-
-```
-完整的NIO工作流程：
-
-1. 创建阶段
-┌──────────────────────────────────────────────┐
-│ ServerSocketChannel channel = ...            │
-│ channel.configureBlocking(false);  // 非阻塞 │
-│                                              │
-│ Selector selector = Selector.open();        │
-│ channel.register(selector, OP_ACCEPT);      │
-└──────────────────────────────────────────────┘
-
-2. 事件循环
-┌──────────────────────────────────────────────┐
-│ while (true) {                               │
-│   int count = selector.select();  // 阻塞等待│
-│   ↓                                          │
-│   Set<SelectionKey> keys = ...;             │
-│   ↓                                          │
-│   for (SelectionKey key : keys) {           │
-│     if (key.isAcceptable()) {               │
-│       // 处理连接事件                        │
-│     } else if (key.isReadable()) {          │
-│       // 处理读事件                          │
-│       ByteBuffer buffer = ...;              │
-│       channel.read(buffer);                 │
-│     }                                        │
-│   }                                          │
-│ }                                            │
-└──────────────────────────────────────────────┘
-
-3. 数据流转
-┌──────────────────────────────────────────────┐
-│  Channel ←→ Buffer ←→ 应用程序               │
-│                                              │
-│  读取：Channel.read(buffer)                  │
-│       ↓                                      │
-│       buffer.flip()  // 切换到读模式         │
-│       ↓                                      │
-│       buffer.get()   // 读取数据             │
-│                                              │
-│  写入：buffer.put()  // 写入数据             │
-│       ↓                                      │
-│       buffer.flip()  // 切换到读模式         │
-│       ↓                                      │
-│       Channel.write(buffer)                 │
-└──────────────────────────────────────────────┘
-```
-
-### 2.3 问题：为什么要设计Buffer这个中间层？
+### 1.1 问题：为什么要设计Buffer这个中间层？
 
 #### 传统BIO的数据流转：
 
@@ -315,9 +67,9 @@ byte b = buffer.get();           // 从Buffer读取
 
 ---
 
-## 三、Buffer深度剖析
+## 二、Buffer核心原理
 
-### 3.1 问题：Buffer的核心属性是如何协作的？
+### 2.1 问题：Buffer的核心属性是如何协作的？
 
 #### Buffer的四个核心属性：
 
@@ -411,7 +163,7 @@ position                           limit
 - 数据并未清除，但会被覆盖
 ```
 
-### 3.2 问题：flip()、clear()、compact()为什么要这样设计？
+### 2.2 问题：flip()、clear()、compact()为什么要这样设计？
 
 #### 设计原理分析：
 
@@ -463,7 +215,11 @@ flip()的本质：
 - compact()：保留未读数据，追加新数据
 ```
 
-### 3.3 问题：HeapBuffer和DirectBuffer有什么本质区别？
+---
+
+## 三、HeapBuffer vs DirectBuffer
+
+### 3.1 问题：HeapBuffer和DirectBuffer有什么本质区别？
 
 #### 内存分配对比：
 
@@ -556,7 +312,11 @@ ByteBuffer buffer = ByteBuffer.allocateDirect(8192);
 // 复用buffer，减少创建开销
 ```
 
-### 3.4 问题：Buffer在实际使用中有哪些容易踩坑的地方？
+---
+
+## 四、Buffer使用陷阱与最佳实践
+
+### 4.1 问题：Buffer在实际使用中有哪些容易踩坑的地方？
 
 #### 陷阱1：忘记flip()
 
@@ -667,9 +427,11 @@ synchronized (sharedBuffer) {
 }
 ```
 
-### 3.5 Buffer的高级特性
+---
 
-#### 1. Scatter/Gather操作
+## 五、Buffer高级特性
+
+### 5.1 Scatter/Gather操作
 
 ```java
 // Scatter Read：分散读取
@@ -702,7 +464,7 @@ long bytesWritten = channel.write(buffers);  // 一次性写入
 // 避免拷贝header和body到一个大Buffer
 ```
 
-#### 2. 只读Buffer
+### 5.2 只读Buffer
 
 ```java
 ByteBuffer buffer = ByteBuffer.allocate(1024);
@@ -722,7 +484,7 @@ readOnlyBuffer.put((byte) 'X');  // ✗ ReadOnlyBufferException
 // 2. 多线程共享只读数据
 ```
 
-#### 3. Buffer切片
+### 5.3 Buffer切片
 
 ```java
 ByteBuffer buffer = ByteBuffer.allocate(10);
@@ -748,9 +510,9 @@ slice.position(0);  // 不影响原buffer的position
 
 ---
 
-## 四、Buffer的源码实现亮点
+## 六、Buffer源码实现亮点
 
-### 4.1 问题：Buffer是如何实现读写模式切换的？
+### 6.1 问题：Buffer是如何实现读写模式切换的？
 
 ```java
 // flip()的实现
@@ -767,7 +529,7 @@ public final Buffer flip() {
 // 3. 支持链式调用：buffer.flip().get()
 ```
 
-### 4.2 问题：DirectBuffer是如何实现的？
+### 6.2 问题：DirectBuffer是如何实现的？
 
 ```java
 // DirectByteBuffer的关键实现
@@ -815,7 +577,7 @@ private static class Deallocator implements Runnable {
 
 ---
 
-## 五、总结：Buffer的设计哲学
+## 七、总结：Buffer的设计哲学
 
 ### 核心设计原则：
 

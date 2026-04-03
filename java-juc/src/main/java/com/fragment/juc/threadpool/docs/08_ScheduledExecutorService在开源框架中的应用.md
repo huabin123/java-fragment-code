@@ -29,10 +29,11 @@
 5. [Netty中的应用](#5-netty中的应用)
 6. [Kafka中的应用](#6-kafka中的应用)
 7. [Redis客户端中的应用](#7-redis客户端中的应用)
-8. [Elasticsearch中的应用](#8-elasticsearch中的应用)
-9. [其他框架中的应用](#9-其他框架中的应用)
-10. [通用问题总结](#10-通用问题总结)
-11. [实战案例](#11-实战案例)
+8. [Redisson分布式锁中的应用](#8-redisson分布式锁中的应用)
+9. [Elasticsearch中的应用](#9-elasticsearch中的应用)
+10. [其他框架中的应用](#10-其他框架中的应用)
+11. [通用问题总结](#11-通用问题总结)
+12. [实战案例](#12-实战案例)
 
 ---
 
@@ -821,9 +822,566 @@ public class ConnectionWatchdog {
 
 ---
 
-## 8. Elasticsearch中的应用
+## 8. Redisson分布式锁中的应用
 
-### 8.1 定期刷新索引
+### 8.1 Watch Dog锁续期机制
+
+**场景：** Redisson的分布式锁自动续期，防止业务执行时间过长导致锁过期
+
+**问题背景：**
+```
+分布式锁的困境：
+1. 设置过期时间太短 → 业务还没执行完，锁就过期了
+2. 设置过期时间太长 → 如果服务宕机，锁长时间不释放
+
+Redisson的解决方案：
+Watch Dog（看门狗）机制 - 自动续期
+```
+
+### 8.2 Watch Dog核心实现
+
+```java
+// Redisson锁续期实现（简化版）
+public class RedissonLock {
+    private final ScheduledExecutorService scheduler;
+    private final long internalLockLeaseTime = 30000;  // 锁过期时间30秒
+    
+    public RedissonLock() {
+        // 创建定时任务线程池
+        this.scheduler = Executors.newScheduledThreadPool(
+            Runtime.getRuntime().availableProcessors() * 2,
+            new ThreadFactory() {
+                private AtomicInteger threadNumber = new AtomicInteger(1);
+                @Override
+                public Thread newThread(Runnable r) {
+                    Thread t = new Thread(r);
+                    t.setName("redisson-lock-watchdog-" + threadNumber.getAndIncrement());
+                    t.setDaemon(true);
+                    return t;
+                }
+            }
+        );
+    }
+    
+    /**
+     * 加锁
+     */
+    public void lock() {
+        // 1. 尝试获取锁
+        String lockKey = "myLock";
+        long threadId = Thread.currentThread().getId();
+        
+        // 2. 使用Lua脚本原子性加锁
+        Boolean locked = tryLock(lockKey, threadId, internalLockLeaseTime);
+        
+        if (locked) {
+            // 3. 加锁成功，启动Watch Dog
+            scheduleExpirationRenewal(lockKey, threadId);
+        }
+    }
+    
+    /**
+     * 调度锁续期任务（Watch Dog核心）
+     */
+    private void scheduleExpirationRenewal(String lockKey, long threadId) {
+        // 创建续期任务
+        ExpirationEntry entry = new ExpirationEntry();
+        
+        // 每隔 internalLockLeaseTime/3 续期一次（即每10秒续期一次）
+        ScheduledFuture<?> task = scheduler.scheduleAtFixedRate(
+            () -> {
+                try {
+                    // 续期：重置过期时间为30秒
+                    renewExpiration(lockKey, threadId, internalLockLeaseTime);
+                    log.debug("锁续期成功: {}, threadId: {}", lockKey, threadId);
+                } catch (Exception e) {
+                    log.error("锁续期失败", e);
+                }
+            },
+            internalLockLeaseTime / 3,  // 初始延迟10秒
+            internalLockLeaseTime / 3,  // 每隔10秒执行一次
+            TimeUnit.MILLISECONDS
+        );
+        
+        entry.setTask(task);
+        expirationRenewalMap.put(getEntryName(lockKey, threadId), entry);
+    }
+    
+    /**
+     * 续期操作（Lua脚本）
+     */
+    private void renewExpiration(String lockKey, long threadId, long leaseTime) {
+        // Lua脚本：如果锁还存在且是当前线程持有，则续期
+        String script = 
+            "if redis.call('hexists', KEYS[1], ARGV[1]) == 1 then " +
+            "    redis.call('pexpire', KEYS[1], ARGV[2]); " +
+            "    return 1; " +
+            "else " +
+            "    return 0; " +
+            "end";
+        
+        redisClient.eval(script, 
+            Collections.singletonList(lockKey),
+            Arrays.asList(String.valueOf(threadId), String.valueOf(leaseTime))
+        );
+    }
+    
+    /**
+     * 解锁
+     */
+    public void unlock() {
+        String lockKey = "myLock";
+        long threadId = Thread.currentThread().getId();
+        
+        // 1. 释放锁
+        releaseLock(lockKey, threadId);
+        
+        // 2. 取消Watch Dog续期任务
+        cancelExpirationRenewal(lockKey, threadId);
+    }
+    
+    /**
+     * 取消续期任务
+     */
+    private void cancelExpirationRenewal(String lockKey, long threadId) {
+        ExpirationEntry entry = expirationRenewalMap.remove(
+            getEntryName(lockKey, threadId)
+        );
+        
+        if (entry != null && entry.getTask() != null) {
+            // 取消定时任务
+            entry.getTask().cancel(false);
+            log.debug("取消锁续期任务: {}, threadId: {}", lockKey, threadId);
+        }
+    }
+    
+    /**
+     * 续期任务信息
+     */
+    static class ExpirationEntry {
+        private ScheduledFuture<?> task;
+        
+        public ScheduledFuture<?> getTask() {
+            return task;
+        }
+        
+        public void setTask(ScheduledFuture<?> task) {
+            this.task = task;
+        }
+    }
+}
+```
+
+### 8.3 Watch Dog工作流程
+
+```
+完整流程：
+┌─────────────────────────────────────────────────────────┐
+│ 1. 客户端调用 lock()                                     │
+└─────────────────────────────────────────────────────────┘
+                        ↓
+┌─────────────────────────────────────────────────────────┐
+│ 2. 尝试获取锁（SET key value EX 30 NX）                 │
+│    - 成功：继续                                          │
+│    - 失败：自旋重试                                      │
+└─────────────────────────────────────────────────────────┘
+                        ↓
+┌─────────────────────────────────────────────────────────┐
+│ 3. 启动Watch Dog（scheduleAtFixedRate）                 │
+│    - 初始延迟：10秒                                      │
+│    - 执行间隔：10秒                                      │
+└─────────────────────────────────────────────────────────┘
+                        ↓
+┌─────────────────────────────────────────────────────────┐
+│ 4. 执行业务逻辑                                          │
+│    - 业务执行中...                                       │
+└─────────────────────────────────────────────────────────┘
+                        ↓
+┌─────────────────────────────────────────────────────────┐
+│ 5. Watch Dog定期续期（每10秒）                           │
+│    - 检查锁是否还存在                                    │
+│    - 如果存在，重置过期时间为30秒                        │
+│    - 如果不存在，停止续期                                │
+└─────────────────────────────────────────────────────────┘
+                        ↓
+┌─────────────────────────────────────────────────────────┐
+│ 6. 业务执行完成，调用 unlock()                           │
+└─────────────────────────────────────────────────────────┘
+                        ↓
+┌─────────────────────────────────────────────────────────┐
+│ 7. 释放锁 + 取消Watch Dog任务                            │
+│    - DEL key                                             │
+│    - task.cancel(false)                                  │
+└─────────────────────────────────────────────────────────┘
+```
+
+### 8.4 时间轴示意图
+
+```
+时间轴：0s----10s----20s----30s----40s----50s----60s
+锁状态：[获取锁，过期时间30s]
+        │
+        │<─────── 业务执行中 ───────────────────────────>│
+        │                                                 │
+Watch Dog: 10s续期    20s续期    30s续期    40s续期    50s释放锁
+           ↓          ↓          ↓          ↓          ↓
+过期时间：  30s → 30s → 30s → 30s → 30s → 删除
+
+说明：
+1. 0s：获取锁，设置过期时间30秒
+2. 10s：Watch Dog续期，过期时间重置为30秒（实际到期时间：40s）
+3. 20s：Watch Dog续期，过期时间重置为30秒（实际到期时间：50s）
+4. 30s：Watch Dog续期，过期时间重置为30秒（实际到期时间：60s）
+5. 40s：Watch Dog续期，过期时间重置为30秒（实际到期时间：70s）
+6. 50s：业务执行完成，释放锁，取消Watch Dog
+```
+
+### 8.5 Redisson源码分析
+
+```java
+// Redisson真实源码（org.redisson.RedissonLock）
+public class RedissonLock implements RLock {
+    
+    // 锁过期时间（默认30秒）
+    private long internalLockLeaseTime;
+    
+    // 续期任务Map
+    private static final ConcurrentMap<String, ExpirationEntry> EXPIRATION_RENEWAL_MAP = 
+        new ConcurrentHashMap<>();
+    
+    @Override
+    public void lock() {
+        try {
+            lock(-1, null, false);
+        } catch (InterruptedException e) {
+            throw new IllegalStateException();
+        }
+    }
+    
+    private void lock(long leaseTime, TimeUnit unit, boolean interruptibly) 
+            throws InterruptedException {
+        long threadId = Thread.currentThread().getId();
+        Long ttl = tryAcquire(-1, leaseTime, unit, threadId);
+        
+        // 如果获取锁成功
+        if (ttl == null) {
+            return;
+        }
+        
+        // 如果获取锁失败，订阅锁释放事件，然后自旋重试
+        // ...
+    }
+    
+    private Long tryAcquire(long waitTime, long leaseTime, TimeUnit unit, long threadId) {
+        return get(tryAcquireAsync(waitTime, leaseTime, unit, threadId));
+    }
+    
+    private <T> RFuture<Long> tryAcquireAsync(long waitTime, long leaseTime, 
+                                               TimeUnit unit, long threadId) {
+        // 如果没有指定leaseTime，使用默认的30秒，并启动Watch Dog
+        if (leaseTime != -1) {
+            return tryLockInnerAsync(waitTime, leaseTime, unit, threadId, RedisCommands.EVAL_LONG);
+        }
+        
+        // 使用默认过期时间，并启动Watch Dog
+        RFuture<Long> ttlRemainingFuture = tryLockInnerAsync(
+            waitTime,
+            internalLockLeaseTime,
+            TimeUnit.MILLISECONDS, 
+            threadId, 
+            RedisCommands.EVAL_LONG
+        );
+        
+        ttlRemainingFuture.onComplete((ttlRemaining, e) -> {
+            if (e != null) {
+                return;
+            }
+            
+            // 如果获取锁成功（ttlRemaining == null），启动Watch Dog
+            if (ttlRemaining == null) {
+                scheduleExpirationRenewal(threadId);
+            }
+        });
+        
+        return ttlRemainingFuture;
+    }
+    
+    /**
+     * 调度续期任务（Watch Dog核心）
+     */
+    private void scheduleExpirationRenewal(long threadId) {
+        ExpirationEntry entry = new ExpirationEntry();
+        ExpirationEntry oldEntry = EXPIRATION_RENEWAL_MAP.putIfAbsent(getEntryName(), entry);
+        
+        if (oldEntry != null) {
+            oldEntry.addThreadId(threadId);
+        } else {
+            entry.addThreadId(threadId);
+            // 启动续期任务
+            renewExpiration();
+        }
+    }
+    
+    /**
+     * 续期任务
+     */
+    private void renewExpiration() {
+        ExpirationEntry ee = EXPIRATION_RENEWAL_MAP.get(getEntryName());
+        if (ee == null) {
+            return;
+        }
+        
+        // 创建定时任务
+        Timeout task = commandExecutor.getConnectionManager().newTimeout(timeout -> {
+            ExpirationEntry ent = EXPIRATION_RENEWAL_MAP.get(getEntryName());
+            if (ent == null) {
+                return;
+            }
+            
+            Long threadId = ent.getFirstThreadId();
+            if (threadId == null) {
+                return;
+            }
+            
+            // 执行续期
+            RFuture<Boolean> future = renewExpirationAsync(threadId);
+            future.onComplete((res, e) -> {
+                if (e != null) {
+                    log.error("Can't update lock " + getName() + " expiration", e);
+                    return;
+                }
+                
+                if (res) {
+                    // 续期成功，继续调度下一次续期
+                    renewExpiration();
+                }
+            });
+        }, internalLockLeaseTime / 3, TimeUnit.MILLISECONDS);  // 每10秒执行一次
+        
+        ee.setTimeout(task);
+    }
+    
+    /**
+     * 执行续期（Lua脚本）
+     */
+    protected RFuture<Boolean> renewExpirationAsync(long threadId) {
+        return evalWriteAsync(getName(), LongCodec.INSTANCE, RedisCommands.EVAL_BOOLEAN,
+            // Lua脚本：如果锁存在，则续期
+            "if (redis.call('hexists', KEYS[1], ARGV[2]) == 1) then " +
+                "redis.call('pexpire', KEYS[1], ARGV[1]); " +
+                "return 1; " +
+            "end; " +
+            "return 0;",
+            Collections.singletonList(getName()),
+            internalLockLeaseTime, getLockName(threadId));
+    }
+    
+    @Override
+    public void unlock() {
+        try {
+            get(unlockAsync(Thread.currentThread().getId()));
+        } catch (RedisException e) {
+            if (e.getCause() instanceof IllegalMonitorStateException) {
+                throw (IllegalMonitorStateException) e.getCause();
+            } else {
+                throw e;
+            }
+        }
+    }
+    
+    @Override
+    public RFuture<Void> unlockAsync(long threadId) {
+        RPromise<Void> result = new RedissonPromise<>();
+        
+        // 释放锁
+        RFuture<Boolean> future = unlockInnerAsync(threadId);
+        
+        future.onComplete((opStatus, e) -> {
+            // 取消Watch Dog
+            cancelExpirationRenewal(threadId);
+            
+            if (e != null) {
+                result.tryFailure(e);
+                return;
+            }
+            
+            if (opStatus == null) {
+                IllegalMonitorStateException cause = 
+                    new IllegalMonitorStateException("attempt to unlock lock, not locked by current thread");
+                result.tryFailure(cause);
+                return;
+            }
+            
+            result.trySuccess(null);
+        });
+        
+        return result;
+    }
+    
+    /**
+     * 取消续期任务
+     */
+    void cancelExpirationRenewal(Long threadId) {
+        ExpirationEntry task = EXPIRATION_RENEWAL_MAP.get(getEntryName());
+        if (task == null) {
+            return;
+        }
+        
+        if (threadId != null) {
+            task.removeThreadId(threadId);
+        }
+        
+        if (threadId == null || task.hasNoThreads()) {
+            Timeout timeout = task.getTimeout();
+            if (timeout != null) {
+                timeout.cancel();  // 取消定时任务
+            }
+            EXPIRATION_RENEWAL_MAP.remove(getEntryName());
+        }
+    }
+}
+```
+
+### 8.6 Watch Dog的优势
+
+```
+1. 自动续期
+   - 不需要手动设置过期时间
+   - 业务执行多久，锁就持有多久
+   - 避免锁提前过期
+
+2. 防止死锁
+   - 如果服务宕机，Watch Dog停止
+   - 锁会在30秒后自动过期
+   - 不会永久占用锁
+
+3. 性能优化
+   - 使用ScheduledExecutorService
+   - 异步续期，不阻塞业务
+   - 续期失败不影响业务
+
+4. 可靠性
+   - 使用Lua脚本保证原子性
+   - 检查锁是否还存在
+   - 只续期自己持有的锁
+```
+
+### 8.7 Watch Dog的注意事项
+
+```
+1. 只有不指定leaseTime才会启动Watch Dog
+   // 会启动Watch Dog
+   lock.lock();
+   
+   // 不会启动Watch Dog
+   lock.lock(10, TimeUnit.SECONDS);
+
+2. 续期间隔是过期时间的1/3
+   - 过期时间30秒
+   - 续期间隔10秒
+   - 保证在过期前至少续期2次
+
+3. 必须正确释放锁
+   try {
+       lock.lock();
+       // 业务逻辑
+   } finally {
+       lock.unlock();  // 必须释放，否则Watch Dog一直续期
+   }
+
+4. Watch Dog线程是守护线程
+   - 不会阻止JVM退出
+   - JVM退出时，锁会在30秒后自动过期
+```
+
+### 8.8 实战案例：使用Redisson分布式锁
+
+```java
+public class RedissonLockDemo {
+    private final RedissonClient redisson;
+    
+    public RedissonLockDemo() {
+        Config config = new Config();
+        config.useSingleServer().setAddress("redis://127.0.0.1:6379");
+        this.redisson = Redisson.create(config);
+    }
+    
+    /**
+     * 使用Watch Dog自动续期
+     */
+    public void processOrderWithWatchDog(String orderId) {
+        RLock lock = redisson.getLock("order:lock:" + orderId);
+        
+        try {
+            // 获取锁（会自动启动Watch Dog）
+            lock.lock();
+            
+            // 执行业务逻辑（可能需要很长时间）
+            processOrder(orderId);
+            
+        } finally {
+            // 释放锁（会自动取消Watch Dog）
+            lock.unlock();
+        }
+    }
+    
+    /**
+     * 手动指定过期时间（不会启动Watch Dog）
+     */
+    public void processOrderWithLeaseTime(String orderId) {
+        RLock lock = redisson.getLock("order:lock:" + orderId);
+        
+        try {
+            // 获取锁，10秒后自动过期（不会启动Watch Dog）
+            lock.lock(10, TimeUnit.SECONDS);
+            
+            // 执行业务逻辑（必须在10秒内完成）
+            processOrder(orderId);
+            
+        } finally {
+            lock.unlock();
+        }
+    }
+    
+    /**
+     * 尝试获取锁
+     */
+    public void tryLockWithWatchDog(String orderId) {
+        RLock lock = redisson.getLock("order:lock:" + orderId);
+        
+        try {
+            // 尝试获取锁，等待3秒（会启动Watch Dog）
+            if (lock.tryLock(3, TimeUnit.SECONDS)) {
+                try {
+                    processOrder(orderId);
+                } finally {
+                    lock.unlock();
+                }
+            } else {
+                System.out.println("获取锁失败");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+    
+    private void processOrder(String orderId) {
+        // 模拟业务处理
+        System.out.println("处理订单: " + orderId);
+        try {
+            Thread.sleep(5000);  // 模拟耗时操作
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+}
+```
+
+---
+
+## 9. Elasticsearch中的应用
+
+### 9.1 定期刷新索引
 
 **场景：** ES定期将内存中的数据刷新到磁盘
 
@@ -857,7 +1415,7 @@ public class IndexService {
 }
 ```
 
-### 8.2 定期合并段（Segment）
+### 9.2 定期合并段（Segment）
 
 **场景：** ES定期合并小的段文件
 
@@ -888,9 +1446,9 @@ public class MergeScheduler {
 
 ---
 
-## 9. 其他框架中的应用
+## 10. 其他框架中的应用
 
-### 9.1 Tomcat - Session清理
+### 10.1 Tomcat - Session清理
 
 ```java
 // Tomcat的Session清理
@@ -922,7 +1480,7 @@ public class StandardManager {
 }
 ```
 
-### 9.2 Quartz - 任务调度
+### 10.2 Quartz - 任务调度
 
 ```java
 // Quartz使用ScheduledExecutorService
@@ -954,7 +1512,7 @@ public class QuartzScheduler {
 }
 ```
 
-### 9.3 HikariCP - 连接池管理
+### 10.3 HikariCP - 连接池管理
 
 ```java
 // HikariCP的连接池维护
