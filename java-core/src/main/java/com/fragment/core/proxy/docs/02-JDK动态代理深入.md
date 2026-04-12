@@ -1,252 +1,207 @@
-# 02 JDK动态代理深入
+# 第二章：JDK 动态代理深入
 
-## InvocationHandler详解
+## 2.1 四种 InvocationHandler 实现模式
 
-### 接口定义
+`JdkProxyDemo.java` 演示了四种典型的 Handler 实现：
+
+### 模式一：日志代理（LoggingInvocationHandler）
+
 ```java
-public interface InvocationHandler {
-    Object invoke(Object proxy, Method method, Object[] args) throws Throwable;
-}
-```
-
-### 参数详解
-- **proxy**：代理对象实例，注意避免在invoke方法中调用proxy的方法，会导致无限递归
-- **method**：被调用的方法对象，包含方法名、参数类型、返回值类型等信息
-- **args**：方法调用的参数数组，基本类型会被自动装箱
-
-### 常见实现模式
-
-#### 1. 基础代理模式
-```java
-public class BasicInvocationHandler implements InvocationHandler {
+// JdkProxyDemo.java → demonstrateLoggingProxy()
+class LoggingInvocationHandler implements InvocationHandler {
     private final Object target;
-    
-    public BasicInvocationHandler(Object target) {
-        this.target = target;
-    }
-    
+
     @Override
     public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
-        // 前置处理
-        System.out.println("调用方法: " + method.getName());
-        
-        // 调用目标方法
+        System.out.println("[LOG] 开始调用: " + method.getName()
+            + ", 参数: " + Arrays.toString(args));
+
         Object result = method.invoke(target, args);
-        
-        // 后置处理
-        System.out.println("方法调用完成");
-        
+
+        System.out.println("[LOG] 调用完成: " + method.getName()
+            + ", 返回: " + result);
         return result;
     }
 }
 ```
 
-#### 2. 条件代理模式
+### 模式二：性能监控代理（PerformanceInvocationHandler）
+
 ```java
-public class ConditionalInvocationHandler implements InvocationHandler {
+// JdkProxyDemo.java → demonstratePerformanceProxy()
+class PerformanceInvocationHandler implements InvocationHandler {
     private final Object target;
-    
+    private static final long SLOW_THRESHOLD_MS = 100;
+
     @Override
     public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
-        // 根据方法名或注解决定是否代理
-        if (method.getName().startsWith("find")) {
-            // 只对查询方法添加缓存逻辑
-            return handleQuery(method, args);
-        } else {
-            // 其他方法直接调用
+        long start = System.currentTimeMillis();
+        try {
             return method.invoke(target, args);
+        } finally {
+            long cost = System.currentTimeMillis() - start;
+            if (cost > SLOW_THRESHOLD_MS) {
+                System.out.println("[PERF] 慢方法告警: " + method.getName()
+                    + " 耗时 " + cost + "ms");
+            }
         }
     }
 }
 ```
 
-## Proxy类详解
+**用 `try-finally` 的重要性**：确保无论方法是否抛出异常，性能计时逻辑都会执行。
 
-### 核心方法
+### 模式三：缓存代理（CacheInvocationHandler）
 
-#### newProxyInstance
 ```java
-public static Object newProxyInstance(
-    ClassLoader loader,
-    Class<?>[] interfaces,
-    InvocationHandler h
-) throws IllegalArgumentException
-```
-
-**参数说明：**
-- `loader`：定义代理类的类加载器
-- `interfaces`：代理类要实现的接口列表
-- `h`：分派方法调用的调用处理程序
-
-#### getProxyClass
-```java
-public static Class<?> getProxyClass(
-    ClassLoader loader,
-    Class<?>... interfaces
-) throws IllegalArgumentException
-```
-获取代理类的Class对象，但不创建实例。
-
-#### isProxyClass
-```java
-public static boolean isProxyClass(Class<?> cl)
-```
-判断给定的类是否为代理类。
-
-### 代理类的特性
-
-1. **继承关系**：所有代理类都继承自`java.lang.reflect.Proxy`
-2. **接口实现**：实现指定的所有接口
-3. **final修饰**：代理类被final修饰，不能被继承
-4. **public修饰**：代理类是public的
-5. **包名规则**：
-   - 如果所有接口都是public的，代理类在`com.sun.proxy`包中
-   - 如果有非public接口，代理类在相同包中
-
-## 高级特性
-
-### 1. 多接口代理
-```java
-// 代理实现多个接口的对象
-Class<?>[] interfaces = {UserService.class, Serializable.class, Cloneable.class};
-Object proxy = Proxy.newProxyInstance(
-    classLoader,
-    interfaces,
-    invocationHandler
-);
-```
-
-### 2. 代理类缓存
-JDK内部会缓存生成的代理类，相同接口组合的代理类只会生成一次。
-
-### 3. 方法分派优化
-```java
-public class OptimizedInvocationHandler implements InvocationHandler {
+// JdkProxyDemo.java → demonstrateCacheProxy()
+class CacheInvocationHandler implements InvocationHandler {
     private final Object target;
-    private final Map<Method, MethodHandler> methodHandlers;
-    
-    public OptimizedInvocationHandler(Object target) {
-        this.target = target;
-        this.methodHandlers = new HashMap<>();
-        initMethodHandlers();
-    }
-    
-    private void initMethodHandlers() {
-        // 为不同方法预定义处理器
-        methodHandlers.put(findMethod("findById"), this::handleQuery);
-        methodHandlers.put(findMethod("save"), this::handleSave);
-    }
-    
+    private final Map<String, Object> cache = new ConcurrentHashMap<>();
+
     @Override
     public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
-        MethodHandler handler = methodHandlers.get(method);
-        if (handler != null) {
-            return handler.handle(method, args);
+        // 只缓存查询方法（方法名以 find/get/query 开头）
+        if (!method.getName().startsWith("find")
+                && !method.getName().startsWith("get")) {
+            return method.invoke(target, args);
+        }
+
+        String key = method.getName() + ":" + Arrays.toString(args);
+        return cache.computeIfAbsent(key, k -> {
+            try {
+                return method.invoke(target, args);
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        });
+    }
+}
+```
+
+### 模式四：组合多个 Handler（责任链）
+
+```java
+// AopFramework.java 中的组合模式
+class ChainedInvocationHandler implements InvocationHandler {
+    private final Object target;
+    private final List<InvocationHandler> handlers;
+
+    @Override
+    public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+        // 依次执行每个 handler 的前置逻辑
+        for (InvocationHandler handler : handlers) {
+            // 实际的责任链需要更复杂的设计，这里简化展示思路
         }
         return method.invoke(target, args);
     }
 }
 ```
 
-## 常见陷阱和注意事项
+---
 
-### 1. 避免无限递归
+## 2.2 异常处理的陷阱
+
+通过反射调用目标方法时，所有异常都会被包装成 `InvocationTargetException`：
+
 ```java
-// 错误示例 - 会导致StackOverflowError
-public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
-    if (method.getName().equals("toString")) {
-        return proxy.toString(); // 错误：会无限递归
-    }
-    return method.invoke(target, args);
-}
-
-// 正确示例
-public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
-    if (method.getName().equals("toString")) {
-        return "Proxy of " + target.getClass().getSimpleName();
-    }
-    return method.invoke(target, args);
-}
-```
-
-### 2. 处理Object方法
-```java
-public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
-    // 特殊处理Object类的方法
-    if (method.getDeclaringClass() == Object.class) {
-        if ("equals".equals(method.getName())) {
-            return proxy == args[0];
-        } else if ("hashCode".equals(method.getName())) {
-            return System.identityHashCode(proxy);
-        } else if ("toString".equals(method.getName())) {
-            return "Proxy@" + Integer.toHexString(System.identityHashCode(proxy));
-        }
-    }
-    
-    return method.invoke(target, args);
-}
-```
-
-### 3. 异常处理
-```java
+@Override
 public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
     try {
         return method.invoke(target, args);
     } catch (InvocationTargetException e) {
-        // 重新抛出原始异常
+        // ❌ 直接抛出 InvocationTargetException：调用方看到的是包装后的异常，不友好
+        throw e;
+
+        // ✅ 解包：把原始异常抛出去，让调用方看到真正的异常
         throw e.getCause();
-    } catch (Exception e) {
-        // 处理其他异常
-        throw new RuntimeException("代理调用失败", e);
+
+        // ✅ 或者：保留原始异常类型
+        Throwable cause = e.getCause();
+        if (cause instanceof RuntimeException) throw (RuntimeException) cause;
+        if (cause instanceof Error) throw (Error) cause;
+        throw new RuntimeException(cause);
     }
 }
 ```
 
-## 性能优化技巧
+**原理**：`method.invoke()` 把目标方法的所有异常（包括 checked exception）包装进 `InvocationTargetException`，必须通过 `getCause()` 解包才能还原原始异常。
 
-### 1. 缓存Method对象
+---
+
+## 2.3 代理对象的类型检查
+
 ```java
-public class CachedInvocationHandler implements InvocationHandler {
-    private static final Map<String, Method> methodCache = new ConcurrentHashMap<>();
-    
-    // 缓存常用方法，避免反射查找
-}
+UserService proxy = (UserService) Proxy.newProxyInstance(...);
+
+// 代理对象实现了 UserService 接口
+System.out.println(proxy instanceof UserService);  // true
+
+// 代理对象是 Proxy 的子类
+System.out.println(proxy instanceof Proxy);  // true
+
+// 代理对象不是 UserServiceImpl 类型
+System.out.println(proxy instanceof UserServiceImpl);  // false！
+
+// 获取代理类名
+System.out.println(proxy.getClass().getName());  // com.sun.proxy.$Proxy0
+
+// 从代理对象获取 InvocationHandler
+InvocationHandler handler = Proxy.getInvocationHandler(proxy);
 ```
 
-### 2. 减少反射调用
+---
+
+## 2.4 哪些方法不会经过 InvocationHandler
+
+不是所有方法调用都会经过代理。以下方法直接在代理类本身实现，不转发给 Handler：
+
 ```java
-// 对于简单的getter/setter，可以直接操作字段
-if (method.getName().startsWith("get")) {
-    String fieldName = getFieldName(method.getName());
-    Field field = target.getClass().getDeclaredField(fieldName);
-    field.setAccessible(true);
-    return field.get(target);
-}
+// Object 的三个方法直接实现，不转发
+proxy.hashCode();   // Proxy 父类直接实现
+proxy.equals(obj);  // Proxy 父类直接实现
+proxy.toString();   // Proxy 父类直接实现
+
+// 接口的 default 方法：在 JDK 8 中不转发，JDK 9+ 修复可以选择转发
 ```
 
-### 3. 使用MethodHandle（Java 7+）
+---
+
+## 2.5 动态代理在 Spring 中的应用
+
+理解 `JdkProxyDemo.java` 中的模式，就理解了 Spring AOP 的本质：
+
+```
+@Transactional 注解 → Spring 检测到方法有事务注解
+    → 生成 JDK 代理对象（目标类有接口）
+    → 代理的 InvocationHandler = TransactionInterceptor
+    → invoke() 中：开事务 → 调用 method.invoke(target, args) → 提交/回滚
+```
+
 ```java
-public class MethodHandleInvocationHandler implements InvocationHandler {
-    private final MethodHandles.Lookup lookup = MethodHandles.lookup();
-    private final Map<Method, MethodHandle> handleCache = new ConcurrentHashMap<>();
-    
-    @Override
-    public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
-        MethodHandle handle = handleCache.computeIfAbsent(method, m -> {
-            try {
-                return lookup.unreflect(m).bindTo(target);
-            } catch (IllegalAccessException e) {
-                throw new RuntimeException(e);
-            }
-        });
-        
-        return handle.invokeWithArguments(args);
+// Spring TransactionInterceptor 的简化原理（非源码，仅示意）
+public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+    TransactionStatus status = transactionManager.getTransaction(txDef);
+    try {
+        Object result = method.invoke(target, args);
+        transactionManager.commit(status);
+        return result;
+    } catch (RuntimeException e) {
+        transactionManager.rollback(status);
+        throw e;
     }
 }
 ```
 
-## 实际应用示例
+---
 
-参考示例代码：
-- `JdkProxyDemo.java`：包含基础代理、日志代理、性能监控代理、缓存代理等完整示例
-- `AopFramework.java`：基于JDK代理实现的简单AOP框架
+## 2.6 本章总结
+
+- **四种 Handler 模式**：日志（前后打印）、性能监控（try-finally 计时）、缓存（方法名+参数作 key）、责任链（多 Handler 组合）
+- **异常解包**：`method.invoke()` 抛出的是 `InvocationTargetException`，必须 `getCause()` 解包
+- **不转发的方法**：`hashCode`、`equals`、`toString` 直接在 Proxy 父类实现
+- **Spring AOP 本质**：`@Transactional` = JDK 代理 + `TransactionInterceptor` 作为 InvocationHandler
+
+> **本章对应演示代码**：`JdkProxyDemo.java`（四种 Handler）、`AopFramework.java`（Handler 组合）
+
+**继续阅读**：[03-CGLIB代理原理.md](./03-CGLIB代理原理.md)

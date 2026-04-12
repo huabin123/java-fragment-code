@@ -1,592 +1,168 @@
-# LinkedHashMap的必要性与应用场景
+# 第一章：LinkedHashMap 的必要性与应用场景
 
-## 1. 为什么需要LinkedHashMap？
+## 1.1 核心问题：HashMap 丢失了什么？
 
-### 1.1 HashMap的局限性
-
-HashMap虽然性能优异，但存在一个明显的局限性：**无序性**。
+HashMap 的 O(1) 查找是通过 hash 散列实现的——元素的存储位置由 hash 值决定，与插入顺序完全无关。这意味着遍历 HashMap 时，得到的顺序是不可预期的（取决于 hash 值分布和数组容量）。
 
 ```java
-Map<String, String> map = new HashMap<>();
-map.put("key1", "value1");
-map.put("key2", "value2");
-map.put("key3", "value3");
+Map<String, Integer> hashMap = new HashMap<>();
+hashMap.put("banana", 2);
+hashMap.put("apple", 1);
+hashMap.put("cherry", 3);
 
-// 遍历顺序不确定
-for (Map.Entry<String, String> entry : map.entrySet()) {
-    System.out.println(entry.getKey() + " = " + entry.getValue());
-}
-
-// 可能输出：
-// key2 = value2
-// key1 = value1
-// key3 = value3
+// 遍历结果可能是：banana=2, cherry=3, apple=1（顺序不定）
+hashMap.forEach((k, v) -> System.out.println(k + "=" + v));
 ```
 
-**问题**：
-- 遍历顺序与插入顺序不一致
-- 无法预测元素的顺序
-- 某些场景需要保持顺序
+在很多业务场景中，**顺序本身就是数据的一部分**：
+- JSON 序列化：配置文件、API 响应中字段顺序有业务含义
+- 配置管理：`server.host` 应该在 `server.port` 之前（`ConfigurationManager.java`）
+- 操作日志：最近的操作排在前面/后面
+- LRU 缓存：最近访问的在最后，最久未访问的在最前（可驱逐）
+
+LinkedHashMap 在 HashMap 的基础上，增加了一条**贯穿所有节点的双向链表**，维护遍历顺序。
 
 ---
 
-### 1.2 需要有序Map的场景
+## 1.2 两种顺序模式
 
-#### 场景1：配置文件读取
+LinkedHashMap 支持两种顺序模式，通过构造函数的第三个参数 `accessOrder` 控制：
+
+### 模式一：插入顺序（accessOrder=false，默认）
 
 ```java
-// 读取配置文件，希望保持配置项的顺序
-Properties config = new Properties();
-config.load(new FileInputStream("config.properties"));
+// LinkedHashMapBasicDemo.java → insertionOrderMode()
+Map<String, Integer> map = new LinkedHashMap<>();  // 等价于 new LinkedHashMap<>(16, 0.75f, false)
+map.put("banana", 2);
+map.put("apple", 1);
+map.put("cherry", 3);
 
-// 问题：HashMap无法保持顺序
-Map<String, String> configMap = new HashMap<>();
-for (String key : config.stringPropertyNames()) {
-    configMap.put(key, config.getProperty(key));
-}
+// 遍历结果固定是插入顺序：banana, apple, cherry
+map.forEach((k, v) -> System.out.println(k + "=" + v));
 
-// 遍历时顺序混乱
+// 重要：put 已存在的 key 不改变顺序（只更新 value）
+map.put("banana", 99);  // banana 的位置不变，仍然在最前
 ```
 
----
+**使用场景**：配置文件、JSON 序列化、需要稳定输出顺序的任何场景。
 
-#### 场景2：JSON序列化
+### 模式二：访问顺序（accessOrder=true）
 
 ```java
-// 希望JSON字段按插入顺序输出
-Map<String, Object> json = new HashMap<>();
-json.put("name", "张三");
-json.put("age", 20);
-json.put("email", "zhangsan@example.com");
+// LinkedHashMapBasicDemo.java → accessOrderMode()
+Map<String, Integer> map = new LinkedHashMap<>(16, 0.75f, true);
+map.put("A", 1);
+map.put("B", 2);
+map.put("C", 3);
 
-// 输出：{"age":20,"name":"张三","email":"zhangsan@example.com"}
-// 问题：顺序不是插入顺序
+// 初始顺序：A, B, C
+map.get("A");  // 访问 A → A 移到链表尾部，顺序变为：B, C, A
+map.get("B");  // 访问 B → B 移到链表尾部，顺序变为：C, A, B
+
+// 遍历结果：C=3, A=1, B=2（按最近访问时间排序，最近的在尾部）
+map.forEach((k, v) -> System.out.println(k + "=" + v));
 ```
+
+**使用场景**：LRU 缓存（最久未访问的元素在链表头部，是驱逐的候选者）。
 
 ---
 
-#### 场景3：LRU缓存
+## 1.3 与 HashMap 的关系：继承而非组合
+
+```
+LinkedHashMap extends HashMap
+```
+
+LinkedHashMap 不是"HashMap + 单独的 LinkedList"的组合，而是**继承 HashMap 并在其节点上额外加了两个指针**：
 
 ```java
-// 需要按访问顺序淘汰最久未使用的元素
-// HashMap无法实现
-```
-
----
-
-### 1.3 LinkedHashMap的设计目标
-
-LinkedHashMap的设计目标是**在HashMap的基础上维护元素的顺序**：
-
-1. **保持插入顺序**：遍历时按插入顺序返回元素
-2. **保持访问顺序**：可选，遍历时按访问顺序返回元素
-3. **高性能**：保持HashMap的O(1)性能
-4. **实现LRU缓存**：通过访问顺序实现LRU算法
-
----
-
-## 2. LinkedHashMap解决了什么核心问题？
-
-### 2.1 核心问题：如何在HashMap基础上维护顺序？
-
-**LinkedHashMap的核心思想**：HashMap + 双向链表
-
-```
-LinkedHashMap = HashMap + 双向链表
-
-HashMap部分：
-table[0] → Entry1
-table[1] → null
-table[2] → Entry2
-table[3] → Entry3
-
-双向链表部分：
-head → Entry1 ↔ Entry2 ↔ Entry3 ↔ tail
-
-通过双向链表维护插入顺序或访问顺序
-```
-
----
-
-### 2.2 插入顺序 vs 访问顺序
-
-#### 插入顺序（默认）
-
-```java
-Map<String, String> map = new LinkedHashMap<>();
-map.put("key1", "value1");
-map.put("key2", "value2");
-map.put("key3", "value3");
-
-// 遍历顺序：key1, key2, key3（插入顺序）
-for (String key : map.keySet()) {
-    System.out.println(key);
+// LinkedHashMap.Entry 继承 HashMap.Node，增加了双向链表指针
+static class Entry<K,V> extends HashMap.Node<K,V> {
+    Entry<K,V> before, after;  // 双向链表指针
 }
 ```
 
----
-
-#### 访问顺序
-
-```java
-// accessOrder=true：按访问顺序
-Map<String, String> map = new LinkedHashMap<>(16, 0.75f, true);
-map.put("key1", "value1");
-map.put("key2", "value2");
-map.put("key3", "value3");
-
-// 访问key1
-map.get("key1");
-
-// 遍历顺序：key2, key3, key1（key1被访问，移到最后）
-for (String key : map.keySet()) {
-    System.out.println(key);
-}
-```
+这意味着每个节点**同时存在于 HashMap 的桶数组和 LinkedHashMap 的双向链表**中。所有的 HashMap 操作（put/get/remove）原有逻辑不变，LinkedHashMap 只是在操作完成后，通过 HashMap 预留的钩子方法（`afterNodeAccess`、`afterNodeInsertion`、`afterNodeRemoval`）维护双向链表的顺序。
 
 ---
 
-## 3. LinkedHashMap的典型应用场景
+## 1.4 LRU 缓存：最经典的应用
 
-### 3.1 场景1：保持插入顺序
+**LRU（Least Recently Used）**缓存的核心逻辑：
+- 每次访问（get/put）把元素移到链表尾部（"最新"）
+- 链表头部始终是最久未访问的元素（"最旧"，驱逐候选）
+- 当容量超限时，驱逐链表头部元素
 
-**需求**：配置文件读取，保持配置项顺序。
-
-```java
-public class ConfigManager {
-    private final Map<String, String> config = new LinkedHashMap<>();
-    
-    public void loadConfig(String filename) throws IOException {
-        Properties props = new Properties();
-        props.load(new FileInputStream(filename));
-        
-        // 按顺序加载配置
-        for (String key : props.stringPropertyNames()) {
-            config.put(key, props.getProperty(key));
-        }
-    }
-    
-    public void printConfig() {
-        System.out.println("配置项（按插入顺序）：");
-        for (Map.Entry<String, String> entry : config.entrySet()) {
-            System.out.println(entry.getKey() + " = " + entry.getValue());
-        }
-    }
-}
-```
-
----
-
-### 3.2 场景2：JSON序列化
-
-**需求**：JSON字段按指定顺序输出。
+LinkedHashMap 在 `accessOrder=true` 模式下，`get` 操作会自动将节点移到链表尾部，配合 `removeEldestEntry` 回调，可以用极少代码实现完整的 LRU：
 
 ```java
-public class JsonBuilder {
-    private final Map<String, Object> json = new LinkedHashMap<>();
-    
-    public JsonBuilder put(String key, Object value) {
-        json.put(key, value);
-        return this;
-    }
-    
-    public String toJson() {
-        // 按插入顺序生成JSON
-        StringBuilder sb = new StringBuilder("{");
-        boolean first = true;
-        for (Map.Entry<String, Object> entry : json.entrySet()) {
-            if (!first) sb.append(",");
-            sb.append("\"").append(entry.getKey()).append("\":");
-            sb.append("\"").append(entry.getValue()).append("\"");
-            first = false;
-        }
-        sb.append("}");
-        return sb.toString();
-    }
-}
-
-// 使用
-JsonBuilder builder = new JsonBuilder();
-builder.put("name", "张三")
-       .put("age", 20)
-       .put("email", "zhangsan@example.com");
-
-String json = builder.toJson();
-// 输出：{"name":"张三","age":"20","email":"zhangsan@example.com"}
-// 顺序与插入顺序一致
-```
-
----
-
-### 3.3 场景3：LRU缓存
-
-**需求**：实现LRU（Least Recently Used）缓存。
-
-```java
-public class LRUCache<K, V> extends LinkedHashMap<K, V> {
-    private final int maxSize;
-    
-    public LRUCache(int maxSize) {
-        // accessOrder=true：按访问顺序
-        super(16, 0.75f, true);
-        this.maxSize = maxSize;
-    }
-    
+// LinkedHashMapLRUDemo.java → simpleLRUCache()
+Map<String, String> lruCache = new LinkedHashMap<String, String>(16, 0.75f, true) {
     @Override
-    protected boolean removeEldestEntry(Map.Entry<K, V> eldest) {
-        // 当size超过maxSize时，删除最老的元素
-        return size() > maxSize;
+    protected boolean removeEldestEntry(Map.Entry<String, String> eldest) {
+        return size() > MAX_CAPACITY;  // 超容量时，自动驱逐最老的（链表头部）
     }
-}
-
-// 使用
-LRUCache<String, String> cache = new LRUCache<>(3);
-cache.put("key1", "value1");
-cache.put("key2", "value2");
-cache.put("key3", "value3");
-
-// 访问key1（key1移到最后）
-cache.get("key1");
-
-// 添加key4（key2被淘汰，因为它是最久未使用的）
-cache.put("key4", "value4");
-
-// 缓存中的元素：key3, key1, key4
+};
 ```
 
----
-
-### 3.4 场景4：访问日志记录
-
-**需求**：记录用户访问历史，按访问时间排序。
+`DatabaseQueryCache.java` 将这个模式升级为可统计命中率的实战版本：
 
 ```java
-public class AccessLogger {
-    // 按访问顺序
-    private final Map<String, Long> accessLog = new LinkedHashMap<>(16, 0.75f, true);
-    
-    public void recordAccess(String userId) {
-        accessLog.put(userId, System.currentTimeMillis());
+// DatabaseQueryCache.java
+this.cache = new LinkedHashMap<String, QueryResult>(16, 0.75f, true) {
+    @Override
+    protected boolean removeEldestEntry(Map.Entry<String, QueryResult> eldest) {
+        boolean shouldRemove = size() > maxSize;
+        if (shouldRemove) evictionCount++;  // 统计驱逐次数
+        return shouldRemove;
     }
-    
-    public void printRecentAccess() {
-        System.out.println("最近访问记录（按访问时间）：");
-        for (Map.Entry<String, Long> entry : accessLog.entrySet()) {
-            System.out.println(entry.getKey() + " - " + new Date(entry.getValue()));
-        }
-    }
-}
+};
+
+// 使用：cache.get() 自动触发 LRU 顺序更新
+QueryResult result = cache.get(cacheKey);
+if (result != null) { hitCount++; return result; }
 ```
 
 ---
 
-### 3.5 场景5：数据库查询缓存
+## 1.5 插入顺序的保证：比你想象的更细致
 
-**需求**：缓存数据库查询结果，自动淘汰最久未使用的查询。
+插入顺序模式下，遍历顺序等于 **put 操作的发生顺序**，但有一个重要细节：
 
 ```java
-public class QueryCache {
-    private final Map<String, Object> cache;
-    private final int maxSize;
-    
-    public QueryCache(int maxSize) {
-        this.maxSize = maxSize;
-        this.cache = new LinkedHashMap<String, Object>(16, 0.75f, true) {
-            @Override
-            protected boolean removeEldestEntry(Map.Entry<String, Object> eldest) {
-                return size() > maxSize;
-            }
-        };
-    }
-    
-    public Object query(String sql) {
-        // 先从缓存获取
-        Object result = cache.get(sql);
-        if (result == null) {
-            // 缓存未命中，执行查询
-            result = executeQuery(sql);
-            cache.put(sql, result);
-        }
-        return result;
-    }
-    
-    private Object executeQuery(String sql) {
-        // 执行数据库查询
-        return null;
-    }
-}
+Map<String, Integer> map = new LinkedHashMap<>();
+map.put("A", 1);  // A 排在第1位
+map.put("B", 2);  // B 排在第2位
+map.put("A", 99); // 更新 A 的值，但 A 的位置不变（仍然第1位）
+
+// 遍历：A=99, B=2
+// 对比 HashMap：可能是 B=2, A=99（无序）
 ```
 
----
-
-### 3.6 场景6：最近使用的文件列表
-
-**需求**：记录最近打开的文件，类似IDE的"最近文件"功能。
-
-```java
-public class RecentFileManager {
-    private final Map<String, String> recentFiles;
-    private final int maxFiles;
-    
-    public RecentFileManager(int maxFiles) {
-        this.maxFiles = maxFiles;
-        this.recentFiles = new LinkedHashMap<String, String>(16, 0.75f, true) {
-            @Override
-            protected boolean removeEldestEntry(Map.Entry<String, String> eldest) {
-                return size() > maxFiles;
-            }
-        };
-    }
-    
-    public void openFile(String filename, String path) {
-        recentFiles.put(filename, path);
-    }
-    
-    public List<String> getRecentFiles() {
-        // 返回最近打开的文件（按访问顺序）
-        return new ArrayList<>(recentFiles.keySet());
-    }
-}
-```
+对于需要维护"首次插入顺序"的场景，这个特性很关键（如 JSON 序列化时保持字段声明顺序）。
 
 ---
 
-## 4. LinkedHashMap出现之前如何解决问题？
+## 1.6 与 TreeMap 的区别：两种不同的"有序"
 
-### 4.1 使用TreeMap
-
-**方案**：使用TreeMap保持key的排序。
-
-```java
-Map<String, String> map = new TreeMap<>();
-map.put("key3", "value3");
-map.put("key1", "value1");
-map.put("key2", "value2");
-
-// 遍历顺序：key1, key2, key3（按key排序）
-```
-
-**缺点**：
-- 按key排序，不是插入顺序
-- 性能较差：O(log n)
-- 无法实现LRU缓存
-
----
-
-### 4.2 自己维护顺序
-
-**方案**：使用HashMap + List维护顺序。
-
-```java
-Map<String, String> map = new HashMap<>();
-List<String> keys = new ArrayList<>();
-
-// 插入
-map.put("key1", "value1");
-keys.add("key1");
-
-// 遍历
-for (String key : keys) {
-    String value = map.get(key);
-    System.out.println(key + " = " + value);
-}
-```
-
-**缺点**：
-- 需要手动维护两个数据结构
-- 代码复杂
-- 容易出错
-- 删除操作需要同时操作两个数据结构
-
----
-
-### 4.3 使用第三方库
-
-**方案**：使用Apache Commons Collections的OrderedMap。
-
-```java
-OrderedMap<String, String> map = new LinkedMap<>();
-```
-
-**缺点**：
-- 需要引入第三方库
-- 功能不如LinkedHashMap完善
-
----
-
-## 5. LinkedHashMap与其他Map实现的对比
-
-### 5.1 LinkedHashMap vs HashMap
-
-| 特性 | HashMap | LinkedHashMap |
-|------|---------|---------------|
-| **底层结构** | 数组+链表+红黑树 | HashMap+双向链表 |
-| **是否有序** | 无序 | 有序（插入/访问顺序） |
-| **性能** | 高 | 稍低（维护链表） |
-| **内存占用** | 中 | 高（额外的链表指针） |
-| **适用场景** | 一般场景 | 需要保持顺序 |
-
----
-
-### 5.2 LinkedHashMap vs TreeMap
-
-| 特性 | LinkedHashMap | TreeMap |
+| 维度 | LinkedHashMap | TreeMap |
 |------|--------------|---------|
-| **底层结构** | HashMap+双向链表 | 红黑树 |
-| **排序方式** | 插入/访问顺序 | key的自然顺序或自定义顺序 |
-| **性能** | O(1) | O(log n) |
-| **null key** | 允许 | 不允许 |
-| **适用场景** | 保持插入顺序、LRU缓存 | 需要排序 |
+| 有序类型 | 插入顺序或访问顺序 | key 的自然顺序（升序）|
+| 底层结构 | HashMap + 双向链表 | 红黑树 |
+| get/put | O(1) | O(log n) |
+| 额外功能 | LRU 缓存 | `firstKey`/`lastKey`/`subMap` 范围查询 |
+| 适用场景 | 需要维护处理顺序 | 需要按 key 范围查询 |
 
 ---
 
-### 5.3 LinkedHashMap vs ArrayList
+## 1.7 本章总结
 
-**场景**：保持插入顺序
+- **存在原因**：HashMap 不保证遍历顺序，LinkedHashMap 通过双向链表维护顺序
+- **两种模式**：插入顺序（默认，适合配置/JSON）；访问顺序（`accessOrder=true`，适合 LRU）
+- **继承关系**：LinkedHashMap extends HashMap，Entry 增加 `before/after` 指针，通过钩子方法维护链表
+- **LRU 的简洁性**：3 行代码（覆盖 `removeEldestEntry`）就能实现完整的 LRU 驱逐逻辑
+- **put 已存在 key**：不改变该 key 的顺序（只更新 value），这是常见的认知误区
 
-| 特性 | LinkedHashMap | ArrayList |
-|------|--------------|-----------|
-| **查找** | O(1) | O(n) |
-| **插入** | O(1) | O(1)（尾部） |
-| **删除** | O(1) | O(n) |
-| **去重** | 自动 | 需要手动 |
-| **适用场景** | 需要快速查找+保持顺序 | 只需要保持顺序 |
-
----
-
-## 6. LinkedHashMap的优缺点
-
-### 6.1 优点
-
-1. **保持顺序**：可以保持插入顺序或访问顺序
-2. **高性能**：保持HashMap的O(1)性能
-3. **实现LRU缓存**：通过访问顺序轻松实现LRU算法
-4. **易于使用**：API与HashMap完全一致
-
----
-
-### 6.2 缺点
-
-1. **内存占用大**：需要额外的双向链表指针
-2. **性能略低**：维护链表有额外开销
-3. **不是线程安全**：与HashMap一样，不是线程安全的
-
----
-
-## 7. 何时使用LinkedHashMap？
-
-### 7.1 适合使用LinkedHashMap的场景
-
-**✅ 场景1**：需要保持插入顺序
-
-```java
-// 配置文件、JSON序列化
-Map<String, String> config = new LinkedHashMap<>();
-```
-
----
-
-**✅ 场景2**：实现LRU缓存
-
-```java
-// 缓存、最近使用的文件列表
-Map<String, Object> cache = new LinkedHashMap<>(16, 0.75f, true);
-```
-
----
-
-**✅ 场景3**：需要可预测的遍历顺序
-
-```java
-// 测试、调试
-Map<String, String> map = new LinkedHashMap<>();
-```
-
----
-
-**✅ 场景4**：需要按访问顺序排序
-
-```java
-// 访问日志、热点数据统计
-Map<String, Long> accessLog = new LinkedHashMap<>(16, 0.75f, true);
-```
-
----
-
-### 7.2 不适合使用LinkedHashMap的场景
-
-**❌ 场景1**：不需要保持顺序
-
-```java
-// 使用HashMap即可
-Map<String, String> map = new HashMap<>();
-```
-
----
-
-**❌ 场景2**：需要按key排序
-
-```java
-// 使用TreeMap
-Map<String, String> map = new TreeMap<>();
-```
-
----
-
-**❌ 场景3**：多线程并发访问
-
-```java
-// 使用ConcurrentHashMap
-Map<String, String> map = new ConcurrentHashMap<>();
-```
-
----
-
-**❌ 场景4**：内存敏感
-
-```java
-// LinkedHashMap内存占用大，使用HashMap
-Map<String, String> map = new HashMap<>();
-```
-
----
-
-## 8. 总结
-
-### 8.1 LinkedHashMap的核心价值
-
-1. **保持顺序**：在HashMap基础上维护插入顺序或访问顺序
-2. **实现LRU缓存**：通过访问顺序和removeEldestEntry方法
-3. **高性能**：保持HashMap的O(1)性能
-4. **易于使用**：API与HashMap完全一致
-
----
-
-### 8.2 何时使用LinkedHashMap
-
-**适合使用**：
-- ✅ 需要保持插入顺序
-- ✅ 实现LRU缓存
-- ✅ 需要可预测的遍历顺序
-- ✅ 需要按访问顺序排序
-
-**不适合使用**：
-- ❌ 不需要保持顺序
-- ❌ 需要按key排序
-- ❌ 多线程并发访问
-- ❌ 内存敏感
-
----
-
-### 8.3 下一步学习
-
-在理解了LinkedHashMap的必要性和应用场景后，接下来我们将深入学习：
-
-1. **LinkedHashMap核心原理与数据结构**：深入理解HashMap+双向链表的设计
-2. **LinkedHashMap源码深度剖析**：分析put/get/remove的实现细节
-3. **LinkedHashMap实现LRU缓存**：深入理解LRU算法的实现
-4. **LinkedHashMap最佳实践**：掌握正确的使用方式和性能优化技巧
-
----
+> **本章对应演示代码**：`LinkedHashMapBasicDemo.java`（两种顺序模式）、`LinkedHashMapLRUDemo.java`（LRU 缓存工作原理）、`DatabaseQueryCache.java`（实战 LRU 缓存）
 
 **继续阅读**：[02_LinkedHashMap核心原理与数据结构.md](./02_LinkedHashMap核心原理与数据结构.md)

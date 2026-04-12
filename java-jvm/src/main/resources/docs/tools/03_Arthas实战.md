@@ -754,4 +754,177 @@ Arthas适用场景：
 
 ---
 
+## 十一、线上诊断实战：10个核心命令速查
+
+> 来源：《Arthas线上诊断你只需要这10个命令》——接口变慢、日志正常、P99 从 50ms 涨到 2 秒，Arthas 能跳过"加日志→部署→再加→再部署"的循环，不改代码、不重启，直接看运行中进程里发生了什么。
+
+### 11.1 连上进程
+
+```bash
+# 输出进程列表，输入序号选目标进程
+java -jar arthas-boot.jar
+
+# 或者指定 PID 直接连
+java -jar arthas-boot.jar 12345
+```
+
+### 11.2 dashboard — 全局概览
+
+进来之后第一条命令，不用参数，5 秒刷新一次：
+- **上半部分**：线程列表，按 CPU 占用排序
+- **下半部分**：JVM 各内存区使用率 + GC 统计
+
+一个屏幕同时能看到：哪个线程在烧 CPU、Old 区有没有逼近上限、Full GC 最近多久触发一次。出事时先 `dashboard` 扫一眼，比盲目 `jstack` 省时间。
+
+### 11.3 thread — 定位具体线程
+
+```bash
+# CPU 占用最高的前 3 个线程，带完整堆栈
+thread -n 3
+
+# 找到正在阻塞其他线程的那个线程（直接定位持锁线程）
+thread -b
+
+# 查看指定线程的堆栈
+thread 12378
+```
+
+> `thread -n 3` 等于 `top -Hp` + 十六进制换算 + `jstack | grep` 三步合一；`thread -b` 直接找到持有锁同时有其他线程排队等它的那个，不用手动搜锁地址。
+
+### 11.4 watch — 观察方法入参/返回值/异常
+
+用得最多的命令，不加日志、不改代码：
+
+```bash
+# 同时观察入参、返回值、异常，展开 3 层嵌套对象
+watch com.example.service.OrderService createOrder '{params, returnObj, throwExp}' -x 3
+
+# 只看耗时超过 500ms 的调用
+watch com.example.service.OrderService createOrder '{params, returnObj}' '#cost > 500'
+
+# 只在方法抛异常时触发，拿到异常对象和触发异常时的入参
+watch com.example.service.OrderService createOrder 'throwExp' -e
+```
+
+> 线上遇到"返回了错误数据但日志里没异常"，第一反应就是 `watch` 看返回值，比猜更快。
+
+### 11.5 trace — 定位方法内哪一步最慢
+
+```bash
+trace com.example.service.OrderService createOrder
+
+# 输出调用树，每层都有耗时：
+# `---[2031.815ms] com.example.service.OrderService:createOrder()
+#     +---[0.322ms]   com.example.mapper.UserMapper:selectById()
+#     +---[2028.112ms] com.example.client.NotifyClient:send()
+#     `---[0.041ms]   com.example.mapper.OrderMapper:insert()
+
+# 展开 JDK 内部调用（如 JSON 序列化开销）
+trace com.example.service.OrderService createOrder --skipJDKMethod false
+```
+
+> 两秒的接口，一眼看出是 `NotifyClient.send()` 吃掉的，数据库查询 0.3ms，问题根本不在那里。
+
+### 11.6 stack — 反向追踪：谁在调这个方法
+
+```bash
+stack com.example.service.OrderService createOrder
+
+# 输出从当前调用一路到线程入口的调用链：
+# ts=2026-04-09;thread_name=http-nio-8080-exec-3
+# @com.example.service.OrderService.createOrder()
+#     at com.example.controller.OrderController.submit(OrderController.java:45)
+#     ...
+```
+
+> 某个写操作被意外触发、某个方法调用次数异常，但日志里找不到是哪个接口发起的，`stack` 直接告诉你调用链。
+
+### 11.7 monitor — 统计一段时间内的调用情况
+
+```bash
+# 每 10 秒输出一次统计
+monitor -c 10 com.example.service.OrderService createOrder
+
+# 输出：
+# timestamp    class          method       total  success  fail  avg-rt(ms)  fail-rate
+# 14:23:11     OrderService   createOrder  127    124      3     48.3        2.36%
+```
+
+> - `fail-rate` 不为零：有异常在被吞掉，日志里不见得有记录
+> - `avg-rt` 偏高但某次 `trace` 很快：是偶发慢请求，需继续加条件过滤
+
+### 11.8 jad — 反编译正在运行的类
+
+```bash
+# 反编译整个类
+jad com.example.service.OrderService
+
+# 只看某个方法
+jad com.example.service.OrderService createOrder
+```
+
+> 线上偶尔遇到"代码跟本地不一样"——有人单独上传了某个 class、热更新没更新干净、多个版本 jar 在 classpath 上冲突。`jad` 直接看运行中字节码的反编译结果，确认跑的是哪个版本。
+
+### 11.9 ognl — 在运行中的 JVM 里执行 Java 表达式
+
+```bash
+# 读取静态变量
+ognl '@com.example.config.AppConfig@maxRetry'
+
+# 调用静态方法
+ognl '@java.lang.System@currentTimeMillis()'
+
+# 查 Spring Bean 的属性（推荐用 vmtool，避免 ContextLoader 返回 null）
+vmtool --action getInstances \
+  --className org.springframework.context.ApplicationContext \
+  --express 'instances[0].getBean("orderService").getMaxConcurrent()'
+```
+
+> `vmtool` 从 JVM 堆里找到所有 `ApplicationContext` 实例，`instances[0]` 取第一个（通常就是 Spring Boot 的主 context），然后调 `getBean` 获取 Bean 并执行方法。线上排查配置有没有生效、Feature Flag 的值是否正确、某个缓存里存了什么，直接读出来，不用加日志不用重启。
+
+### 11.10 logger — 动态修改日志级别
+
+```bash
+# 把 com.example 包的日志改成 DEBUG
+logger --name com.example --level DEBUG
+
+# 问题定位完改回 INFO
+logger --name com.example --level INFO
+
+# 查看当前所有 logger 的级别（确认没有忘记改回去的 DEBUG）
+logger
+```
+
+> 排查问题时开 DEBUG 捞详细日志，捞完改回 INFO，不影响线上流量，也不会把磁盘打满。
+
+### 11.11 heapdump — 生成堆 dump
+
+```bash
+# 完整堆 dump
+heapdump /tmp/heap.hprof
+
+# 只 dump 存活对象，文件更小（推荐先用这个）
+heapdump --live /tmp/heap-live.hprof
+```
+
+> `--live` 只抓存活对象，同一个堆加了这个选项有时候文件从几 GB 缩到几百 MB，传出来分析方便得多。如果 MAT 分析发现问题不在存活对象里，再 dump 完整版。
+
+### 11.12 10个命令速查表
+
+| 命令 | 核心用途 | 典型场景 |
+|------|----------|----------|
+| `dashboard` | 全局概览（线程/内存/GC） | 出事第一眼 |
+| `thread -n 3` | CPU 最高的线程堆栈 | CPU 飙高 |
+| `thread -b` | 找持锁阻塞线程 | 线程死锁 |
+| `watch` | 观察方法入参/返回值/异常 | 返回错误数据、异常被吞 |
+| `trace` | 方法内调用树 + 耗时 | 接口慢、定位慢在哪步 |
+| `stack` | 反向追调用来源 | 方法被意外调用 |
+| `monitor` | 统计成功率/平均耗时 | 偶发错误、偶发慢请求 |
+| `jad` | 反编译运行中的类 | 确认线上代码版本 |
+| `ognl` / `vmtool` | 执行表达式/读 Bean 属性 | 配置验证、缓存查看 |
+| `logger` | 动态修改日志级别 | 临时开 DEBUG |
+| `heapdump` | 生成堆 dump | 内存泄漏分析 |
+
+---
+
 **下一篇**：[APM监控系统](./04_APM监控系统.md)

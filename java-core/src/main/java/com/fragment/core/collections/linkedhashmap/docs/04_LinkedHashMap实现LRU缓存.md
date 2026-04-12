@@ -1,700 +1,176 @@
-# LinkedHashMap实现LRU缓存
+# 第四章：LinkedHashMap 实现 LRU 缓存
 
-## 1. 什么是LRU缓存？
+## 4.1 LRU 算法的本质
 
-### 1.1 LRU算法
+**LRU（Least Recently Used，最近最少使用）**是一种缓存淘汰策略：当缓存满时，驱逐最久未被访问的元素。
 
-**LRU（Least Recently Used）**：最近最少使用算法。
+核心假设：**最近被访问过的数据，未来大概率还会被访问**（时间局部性原理）。
 
-**核心思想**：
-- 如果数据最近被访问过，那么将来被访问的几率也更高
-- 当缓存满时，优先淘汰最久未使用的数据
+LRU 需要支持的操作：
+- `get(key)`：O(1) 查找，同时将元素标记为"最近使用"
+- `put(key, value)`：O(1) 插入，若满则驱逐最久未使用的元素
 
-**应用场景**：
-- 操作系统的页面置换算法
-- 数据库缓存
-- Web缓存
-- CPU缓存
+**为什么 LinkedHashMap 天然适合实现 LRU？**
 
----
+LRU 需要一个数据结构同时满足：
+- O(1) 按 key 查找：**HashMap**
+- O(1) 将访问过的元素移到"最新"位置：**双向链表**（找到节点后，修改前后指针）
+- O(1) 驱逐"最旧"元素：**双向链表头部直接删除**
 
-### 1.2 LRU缓存的特性
-
-**基本操作**：
-1. **get(key)**：获取缓存中的数据
-2. **put(key, value)**：添加数据到缓存
-
-**核心特性**：
-1. **固定容量**：缓存有最大容量限制
-2. **自动淘汰**：当缓存满时，自动删除最久未使用的数据
-3. **O(1)时间复杂度**：get和put操作都应该是O(1)
+LinkedHashMap 的 `accessOrder=true` 模式完全满足这三个条件。
 
 ---
 
-### 1.3 LRU缓存的工作原理
-
-```
-初始状态（容量=3）：
-[]
-
-put(1, "A"):
-[1]
-
-put(2, "B"):
-[1, 2]
-
-put(3, "C"):
-[1, 2, 3]
-
-get(1)（访问1，1移到最后）:
-[2, 3, 1]
-
-put(4, "D")（缓存满，删除最久未使用的2）:
-[3, 1, 4]
-
-get(3)（访问3，3移到最后）:
-[1, 4, 3]
-
-put(5, "E")（缓存满，删除最久未使用的1）:
-[4, 3, 5]
-```
-
----
-
-## 2. 为什么LinkedHashMap适合实现LRU缓存？
-
-### 2.1 LRU缓存的需求
-
-1. **快速查找**：O(1)时间复杂度
-2. **维护顺序**：按访问顺序排列
-3. **快速删除**：删除最久未使用的元素
-4. **快速插入**：添加新元素到最后
-
----
-
-### 2.2 LinkedHashMap的优势
-
-| 需求 | LinkedHashMap的实现 | 时间复杂度 |
-|------|-------------------|-----------|
-| **快速查找** | HashMap的hash表 | O(1) |
-| **维护顺序** | 双向链表 + accessOrder=true | O(1) |
-| **快速删除** | 删除head节点 | O(1) |
-| **快速插入** | 添加到tail | O(1) |
-
-**结论**：LinkedHashMap天然适合实现LRU缓存！
-
----
-
-## 3. 基础LRU缓存实现
-
-### 3.1 最简单的实现
+## 4.2 最简 LRU 实现：3 行代码
 
 ```java
-public class SimpleLRUCache<K, V> extends LinkedHashMap<K, V> {
-    private final int maxSize;
-    
-    public SimpleLRUCache(int maxSize) {
-        // accessOrder=true：按访问顺序
-        super(16, 0.75f, true);
-        this.maxSize = maxSize;
-    }
-    
+// LinkedHashMapLRUDemo.java → simpleLRUCache()
+int maxCapacity = 3;
+Map<String, String> lruCache = new LinkedHashMap<String, String>(16, 0.75f, true) {
     @Override
-    protected boolean removeEldestEntry(Map.Entry<K, V> eldest) {
-        // 当size超过maxSize时，删除最老的元素
-        return size() > maxSize;
+    protected boolean removeEldestEntry(Map.Entry<String, String> eldest) {
+        return size() > maxCapacity;  // 唯一需要写的逻辑
     }
+};
+```
+
+**运行过程演示**（`LinkedHashMapLRUDemo.java` 的实际输出）：
+
+```
+put key1 → 链表：[key1]
+put key2 → 链表：[key1, key2]
+put key3 → 链表：[key1, key2, key3]
+
+get key1  → key1 被访问，移到尾部 → 链表：[key2, key3, key1]
+
+put key4  → 插入 key4，size=4 > 3，驱逐 head（key2）
+           → 链表：[key3, key1, key4]
+
+get key3  → key3 被访问，移到尾部 → 链表：[key1, key4, key3]
+
+put key5  → 插入 key5，size=4 > 3，驱逐 head（key1）
+           → 链表：[key4, key3, key5]
+```
+
+---
+
+## 4.3 生产级 LRU 缓存：DatabaseQueryCache 分析
+
+`DatabaseQueryCache.java` 在上述基础上增加了：
+- **命中率统计**（`hitCount`/`missCount`/`evictionCount`）
+- **缓存失效接口**（`invalidate(sql)` 清除特定 SQL 的缓存）
+- **完整的查询包装**（`query()` 方法自动处理缓存命中/未命中）
+
+```java
+// DatabaseQueryCache.java 的核心模式
+public QueryResult query(String sql, Object... params) {
+    String cacheKey = generateCacheKey(sql, params);  // "SELECT...WHERE id=?:1"
+
+    // 1. 查缓存（get 同时更新 LRU 顺序）
+    QueryResult result = cache.get(cacheKey);
+    if (result != null) {
+        hitCount++;
+        return result;  // 缓存命中，直接返回
+    }
+
+    // 2. 缓存未命中，执行真实查询
+    missCount++;
+    result = executeQuery(sql, params);  // 模拟 100ms 数据库查询
+
+    // 3. 结果放入缓存（put 后触发 removeEldestEntry 检查）
+    cache.put(cacheKey, result);
+    return result;
 }
 ```
 
-**使用示例**：
+**测试场景分析（`DatabaseQueryCache.main()`）**：
+1. 查 id=1,2,3（miss×3，缓存满：[1,2,3]）
+2. 查 id=1,2（hit×2，缓存更新：[3,1,2]）
+3. 查 id=4（miss，缓存满，驱逐 head=3：[1,2,4]）
+4. 查 id=3（miss，3 已被驱逐，缓存更新：[2,4,3]）
 
-```java
-SimpleLRUCache<Integer, String> cache = new SimpleLRUCache<>(3);
-
-cache.put(1, "A");
-cache.put(2, "B");
-cache.put(3, "C");
-System.out.println(cache);  // {1=A, 2=B, 3=C}
-
-cache.get(1);  // 访问1
-System.out.println(cache);  // {2=B, 3=C, 1=A}
-
-cache.put(4, "D");  // 添加4，删除最久未使用的2
-System.out.println(cache);  // {3=C, 1=A, 4=D}
-```
+最终命中率：2/(2+4) ≈ 33%，这反映了测试中的访问模式。
 
 ---
 
-### 3.2 工作原理
+## 4.4 LRU 的线程安全问题
 
-**关键点1：accessOrder=true**
+`DatabaseQueryCache.java` 的注释明确指出：**线程不安全**。
 
-```java
-super(16, 0.75f, true);
-```
+在 `accessOrder=true` 模式下，`get` 操作会修改双向链表（移动节点），这比 HashMap 更危险——不仅是写操作，**读操作（get）也会修改数据结构**，导致即使是"只读"并发也会引发问题。
 
-- 按访问顺序维护链表
-- get操作会将元素移到链表尾部
-
-**关键点2：removeEldestEntry**
+### 方案一：外部 synchronized（简单，但粗粒度）
 
 ```java
-@Override
-protected boolean removeEldestEntry(Map.Entry<K, V> eldest) {
-    return size() > maxSize;
-}
-```
+private final Map<String, QueryResult> cache;
+private final Object lock = new Object();
 
-- 在每次put后调用
-- 如果返回true，删除最老的元素（head）
-
----
-
-### 3.3 完整流程分析
-
-```java
-SimpleLRUCache<Integer, String> cache = new SimpleLRUCache<>(3);
-
-// 步骤1：put(1, "A")
-cache.put(1, "A");
-// 链表：head → 1 ← tail
-// size=1, maxSize=3, 不删除
-
-// 步骤2：put(2, "B")
-cache.put(2, "B");
-// 链表：head → 1 ↔ 2 ← tail
-// size=2, maxSize=3, 不删除
-
-// 步骤3：put(3, "C")
-cache.put(3, "C");
-// 链表：head → 1 ↔ 2 ↔ 3 ← tail
-// size=3, maxSize=3, 不删除
-
-// 步骤4：get(1)
-cache.get(1);
-// 访问1，1移到尾部
-// 链表：head → 2 ↔ 3 ↔ 1 ← tail
-
-// 步骤5：put(4, "D")
-cache.put(4, "D");
-// 1. 插入4到尾部：head → 2 ↔ 3 ↔ 1 ↔ 4 ← tail
-// 2. size=4 > maxSize=3，removeEldestEntry返回true
-// 3. 删除head（2）：head → 3 ↔ 1 ↔ 4 ← tail
-```
-
----
-
-## 4. 增强版LRU缓存实现
-
-### 4.1 添加统计功能
-
-```java
-public class LRUCache<K, V> extends LinkedHashMap<K, V> {
-    private final int maxSize;
-    private int hitCount = 0;      // 命中次数
-    private int missCount = 0;     // 未命中次数
-    private int evictionCount = 0; // 淘汰次数
-    
-    public LRUCache(int maxSize) {
-        super(16, 0.75f, true);
-        this.maxSize = maxSize;
+public QueryResult query(String sql, Object... params) {
+    String cacheKey = generateCacheKey(sql, params);
+    synchronized (lock) {
+        QueryResult result = cache.get(cacheKey);  // get 也需要锁！
+        if (result != null) return result;
     }
-    
-    @Override
-    public V get(Object key) {
-        V value = super.get(key);
-        if (value != null) {
-            hitCount++;
-        } else {
-            missCount++;
-        }
-        return value;
-    }
-    
-    @Override
-    protected boolean removeEldestEntry(Map.Entry<K, V> eldest) {
-        boolean shouldRemove = size() > maxSize;
-        if (shouldRemove) {
-            evictionCount++;
-            System.out.println("淘汰: " + eldest.getKey() + "=" + eldest.getValue());
-        }
-        return shouldRemove;
-    }
-    
-    // 获取命中率
-    public double getHitRate() {
-        int total = hitCount + missCount;
-        return total == 0 ? 0 : (double) hitCount / total;
-    }
-    
-    // 打印统计信息
-    public void printStats() {
-        System.out.println("缓存统计:");
-        System.out.println("  命中次数: " + hitCount);
-        System.out.println("  未命中次数: " + missCount);
-        System.out.println("  命中率: " + String.format("%.2f%%", getHitRate() * 100));
-        System.out.println("  淘汰次数: " + evictionCount);
-        System.out.println("  当前大小: " + size());
-    }
-}
-```
-
-**使用示例**：
-
-```java
-LRUCache<Integer, String> cache = new LRUCache<>(3);
-
-cache.put(1, "A");
-cache.put(2, "B");
-cache.put(3, "C");
-
-cache.get(1);  // 命中
-cache.get(4);  // 未命中
-
-cache.put(4, "D");  // 淘汰2
-
-cache.printStats();
-// 缓存统计:
-//   命中次数: 1
-//   未命中次数: 1
-//   命中率: 50.00%
-//   淘汰次数: 1
-//   当前大小: 3
-```
-
----
-
-### 4.2 添加过期时间
-
-```java
-public class LRUCacheWithExpiration<K, V> extends LinkedHashMap<K, V> {
-    private final int maxSize;
-    private final long expireTime;  // 过期时间（毫秒）
-    private final Map<K, Long> timestamps = new HashMap<>();
-    
-    public LRUCacheWithExpiration(int maxSize, long expireTime) {
-        super(16, 0.75f, true);
-        this.maxSize = maxSize;
-        this.expireTime = expireTime;
-    }
-    
-    @Override
-    public V put(K key, V value) {
-        timestamps.put(key, System.currentTimeMillis());
-        return super.put(key, value);
-    }
-    
-    @Override
-    public V get(Object key) {
-        // 检查是否过期
-        Long timestamp = timestamps.get(key);
-        if (timestamp != null) {
-            long age = System.currentTimeMillis() - timestamp;
-            if (age > expireTime) {
-                // 过期，删除
-                remove(key);
-                timestamps.remove(key);
-                return null;
-            }
-        }
-        return super.get(key);
-    }
-    
-    @Override
-    protected boolean removeEldestEntry(Map.Entry<K, V> eldest) {
-        if (size() > maxSize) {
-            timestamps.remove(eldest.getKey());
-            return true;
-        }
-        return false;
-    }
-    
-    // 清理过期元素
-    public void cleanUp() {
-        long now = System.currentTimeMillis();
-        List<K> expiredKeys = new ArrayList<>();
-        
-        for (Map.Entry<K, Long> entry : timestamps.entrySet()) {
-            if (now - entry.getValue() > expireTime) {
-                expiredKeys.add(entry.getKey());
-            }
-        }
-        
-        for (K key : expiredKeys) {
-            remove(key);
-            timestamps.remove(key);
-        }
-    }
-}
-```
-
-**使用示例**：
-
-```java
-// 最大容量3，过期时间5秒
-LRUCacheWithExpiration<Integer, String> cache = 
-    new LRUCacheWithExpiration<>(3, 5000);
-
-cache.put(1, "A");
-cache.put(2, "B");
-
-Thread.sleep(6000);  // 等待6秒
-
-String value = cache.get(1);  // null，已过期
-```
-
----
-
-### 4.3 线程安全的LRU缓存
-
-```java
-public class ThreadSafeLRUCache<K, V> {
-    private final LinkedHashMap<K, V> cache;
-    private final int maxSize;
-    
-    public ThreadSafeLRUCache(int maxSize) {
-        this.maxSize = maxSize;
-        this.cache = new LinkedHashMap<K, V>(16, 0.75f, true) {
-            @Override
-            protected boolean removeEldestEntry(Map.Entry<K, V> eldest) {
-                return size() > maxSize;
-            }
-        };
-    }
-    
-    public synchronized V get(K key) {
-        return cache.get(key);
-    }
-    
-    public synchronized V put(K key, V value) {
-        return cache.put(key, value);
-    }
-    
-    public synchronized V remove(K key) {
-        return cache.remove(key);
-    }
-    
-    public synchronized int size() {
-        return cache.size();
-    }
-    
-    public synchronized void clear() {
-        cache.clear();
-    }
-}
-```
-
-**注意**：
-- 所有方法都加synchronized，保证线程安全
-- 性能较差，高并发场景不推荐
-- 推荐使用Guava的Cache或Caffeine
-
----
-
-## 5. 实际项目应用
-
-### 5.1 数据库查询缓存
-
-```java
-public class DatabaseQueryCache {
-    private final LRUCache<String, Object> cache;
-    
-    public DatabaseQueryCache(int maxSize) {
-        this.cache = new LRUCache<>(maxSize);
-    }
-    
-    public Object query(String sql, Object... params) {
-        // 生成缓存key
-        String cacheKey = generateKey(sql, params);
-        
-        // 先从缓存获取
-        Object result = cache.get(cacheKey);
-        if (result != null) {
-            System.out.println("缓存命中: " + sql);
-            return result;
-        }
-        
-        // 缓存未命中，执行查询
-        System.out.println("缓存未命中，执行查询: " + sql);
-        result = executeQuery(sql, params);
-        
-        // 放入缓存
+    // 注意：查询数据库在锁外执行（避免持锁期间长时间 IO）
+    QueryResult result = executeQuery(sql, params);
+    synchronized (lock) {
         cache.put(cacheKey, result);
-        
-        return result;
     }
-    
-    private String generateKey(String sql, Object... params) {
-        StringBuilder sb = new StringBuilder(sql);
-        for (Object param : params) {
-            sb.append(":").append(param);
-        }
-        return sb.toString();
-    }
-    
-    private Object executeQuery(String sql, Object... params) {
-        // 模拟数据库查询
-        try {
-            Thread.sleep(100);  // 模拟查询耗时
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        }
-        return "查询结果";
-    }
-    
-    public void printStats() {
-        cache.printStats();
-    }
-}
-
-// 使用示例
-public class DatabaseQueryCacheDemo {
-    public static void main(String[] args) {
-        DatabaseQueryCache cache = new DatabaseQueryCache(3);
-        
-        cache.query("SELECT * FROM users WHERE id = ?", 1);  // 未命中
-        cache.query("SELECT * FROM users WHERE id = ?", 2);  // 未命中
-        cache.query("SELECT * FROM users WHERE id = ?", 1);  // 命中
-        cache.query("SELECT * FROM users WHERE id = ?", 3);  // 未命中
-        cache.query("SELECT * FROM users WHERE id = ?", 4);  // 未命中，淘汰id=2
-        
-        cache.printStats();
-    }
+    return result;
 }
 ```
 
----
+**缺点**：可能出现缓存击穿（多个线程同时发现 cache miss，同时执行数据库查询）。
 
-### 5.2 图片缓存
+### 方案二：Collections.synchronizedMap（等价于方案一，更简洁但有陷阱）
 
 ```java
-public class ImageCache {
-    private final LRUCache<String, byte[]> cache;
-    
-    public ImageCache(int maxSize) {
-        this.cache = new LRUCache<>(maxSize);
+Map<String, QueryResult> cache = Collections.synchronizedMap(
+    new LinkedHashMap<>(16, 0.75f, true) {
+        @Override protected boolean removeEldestEntry(...) { return size() > maxSize; }
     }
-    
-    public byte[] getImage(String url) {
-        // 先从缓存获取
-        byte[] image = cache.get(url);
-        if (image != null) {
-            System.out.println("从缓存获取图片: " + url);
-            return image;
-        }
-        
-        // 缓存未命中，下载图片
-        System.out.println("下载图片: " + url);
-        image = downloadImage(url);
-        
-        // 放入缓存
-        cache.put(url, image);
-        
-        return image;
-    }
-    
-    private byte[] downloadImage(String url) {
-        // 模拟下载图片
-        try {
-            Thread.sleep(500);  // 模拟下载耗时
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        }
-        return new byte[1024];  // 模拟图片数据
-    }
-}
+);
 ```
 
----
+**陷阱**：遍历时需要手动加锁，否则会 CME。
 
-### 5.3 API响应缓存
+### 方案三：Caffeine（生产环境推荐）
+
+对于真正的生产级高并发 LRU 缓存，推荐使用 [Caffeine](https://github.com/ben-manes/caffeine)：
 
 ```java
-public class ApiResponseCache {
-    private final LRUCacheWithExpiration<String, String> cache;
-    
-    public ApiResponseCache(int maxSize, long expireTime) {
-        this.cache = new LRUCacheWithExpiration<>(maxSize, expireTime);
-    }
-    
-    public String callApi(String endpoint, Map<String, String> params) {
-        // 生成缓存key
-        String cacheKey = generateKey(endpoint, params);
-        
-        // 先从缓存获取
-        String response = cache.get(cacheKey);
-        if (response != null) {
-            System.out.println("缓存命中: " + endpoint);
-            return response;
-        }
-        
-        // 缓存未命中，调用API
-        System.out.println("调用API: " + endpoint);
-        response = invokeApi(endpoint, params);
-        
-        // 放入缓存
-        cache.put(cacheKey, response);
-        
-        return response;
-    }
-    
-    private String generateKey(String endpoint, Map<String, String> params) {
-        StringBuilder sb = new StringBuilder(endpoint);
-        for (Map.Entry<String, String> entry : params.entrySet()) {
-            sb.append(":").append(entry.getKey()).append("=").append(entry.getValue());
-        }
-        return sb.toString();
-    }
-    
-    private String invokeApi(String endpoint, Map<String, String> params) {
-        // 模拟API调用
-        try {
-            Thread.sleep(200);  // 模拟网络延迟
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        }
-        return "{\"status\":\"success\"}";
-    }
-}
+Cache<String, QueryResult> cache = Caffeine.newBuilder()
+    .maximumSize(maxSize)
+    .build();
+
+QueryResult result = cache.get(cacheKey, key -> executeQuery(sql, params));
 ```
 
----
-
-## 6. LRU缓存的性能分析
-
-### 6.1 时间复杂度
-
-| 操作 | 时间复杂度 | 说明 |
-|------|-----------|------|
-| **get** | O(1) | HashMap查找 + 链表移动 |
-| **put** | O(1) | HashMap插入 + 链表插入 + 可能删除 |
-| **remove** | O(1) | HashMap删除 + 链表删除 |
+Caffeine 使用 Window TinyLFU 算法（比纯 LRU 命中率更高），内部用无锁结构实现高并发，是 Spring Cache、Guava Cache 的现代替代品。
 
 ---
 
-### 6.2 空间复杂度
+## 4.5 LRU vs 其他缓存淘汰策略
 
-```
-空间复杂度：O(n)
+| 策略 | 全称 | 驱逐规则 | 适用场景 |
+|------|------|---------|---------|
+| LRU | Least Recently Used | 最久未访问 | 时间局部性强的场景（大多数业务缓存）|
+| LFU | Least Frequently Used | 访问频率最低 | 热点数据稳定的场景（部分 key 永远是热点）|
+| FIFO | First In First Out | 最早插入 | 时间序相关的场景（消息、日志）|
+| Random | 随机 | 随机驱逐 | 简单场景，不需要精确控制 |
 
-其中n为缓存容量
-
-额外空间：
-- HashMap的table数组
-- 双向链表的指针
-- Entry节点
-```
+LinkedHashMap 只直接支持 LRU（通过 `accessOrder=true`）。LFU 需要额外维护频次计数，LinkedHashMap 无法直接实现。
 
 ---
 
-### 6.3 性能测试
+## 4.6 本章总结
 
-```java
-public class LRUCachePerformanceTest {
-    public static void main(String[] args) {
-        int cacheSize = 1000;
-        int testCount = 100000;
-        
-        LRUCache<Integer, String> cache = new LRUCache<>(cacheSize);
-        
-        // 预热
-        for (int i = 0; i < cacheSize; i++) {
-            cache.put(i, "value" + i);
-        }
-        
-        // 测试get性能
-        long start = System.currentTimeMillis();
-        for (int i = 0; i < testCount; i++) {
-            int key = (int) (Math.random() * cacheSize * 2);
-            cache.get(key);
-        }
-        long end = System.currentTimeMillis();
-        
-        System.out.println("get操作 " + testCount + " 次，耗时: " + (end - start) + "ms");
-        System.out.println("平均每次: " + ((end - start) * 1000000.0 / testCount) + "ns");
-        
-        cache.printStats();
-    }
-}
-```
+- **LRU 三要素**：O(1) 查找（HashMap）+ O(1) 移位（双向链表）+ O(1) 驱逐头部（链表头）
+- **最简实现**：`accessOrder=true` + 覆盖 `removeEldestEntry`，3 行代码
+- **get 也修改结构**：`accessOrder=true` 下，读操作也修改链表，多线程下需要对 get 加锁
+- **生产推荐**：高并发场景用 Caffeine；单线程/低并发用 LinkedHashMap LRU
+- **命中率**：通过 `hitCount`/`missCount` 统计，是评估缓存效果的核心指标
 
----
-
-## 7. LRU缓存的优缺点
-
-### 7.1 优点
-
-1. **实现简单**：基于LinkedHashMap，代码简洁
-2. **性能优异**：所有操作都是O(1)
-3. **自动淘汰**：无需手动管理缓存
-4. **符合局部性原理**：最近访问的数据更可能再次访问
-
----
-
-### 7.2 缺点
-
-1. **无法区分访问频率**：只考虑访问时间，不考虑访问频率
-2. **缓存污染**：偶尔访问的数据可能淘汰频繁访问的数据
-3. **不支持权重**：所有数据权重相同
-4. **内存占用大**：需要维护双向链表
-
----
-
-### 7.3 改进方案
-
-**LRU的变种**：
-
-1. **LRU-K**：考虑最近K次访问
-2. **2Q**：使用两个队列
-3. **LFU（Least Frequently Used）**：最少使用频率
-4. **ARC（Adaptive Replacement Cache）**：自适应替换
-
-**推荐的缓存库**：
-
-1. **Guava Cache**：Google的缓存库
-2. **Caffeine**：高性能缓存库
-3. **Ehcache**：企业级缓存
-
----
-
-## 8. 总结
-
-### 8.1 核心要点
-
-1. **LRU算法**：最近最少使用算法
-2. **LinkedHashMap实现**：accessOrder=true + removeEldestEntry
-3. **O(1)性能**：所有操作都是O(1)
-4. **实际应用**：数据库缓存、图片缓存、API缓存
-
----
-
-### 8.2 实现要点
-
-```java
-public class LRUCache<K, V> extends LinkedHashMap<K, V> {
-    private final int maxSize;
-    
-    public LRUCache(int maxSize) {
-        super(16, 0.75f, true);  // accessOrder=true
-        this.maxSize = maxSize;
-    }
-    
-    @Override
-    protected boolean removeEldestEntry(Map.Entry<K, V> eldest) {
-        return size() > maxSize;  // 超过容量时删除
-    }
-}
-```
-
----
-
-### 8.3 下一步学习
-
-在理解了LinkedHashMap实现LRU缓存后，接下来我们将学习：
-
-**LinkedHashMap最佳实践与性能分析**：掌握正确的使用方式和性能优化技巧
-
----
+> **本章对应演示代码**：`LinkedHashMapLRUDemo.java`（LRU 工作流程可视化）、`DatabaseQueryCache.java`（生产级 LRU 缓存实现）
 
 **继续阅读**：[05_LinkedHashMap最佳实践与性能分析.md](./05_LinkedHashMap最佳实践与性能分析.md)

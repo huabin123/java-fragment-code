@@ -1,64 +1,111 @@
-# Java 泛型通配符详解
+# 第一章：泛型通配符与 PECS 原则
 
-## 1. 泛型通配符概述
+## 1.1 问题的起点：为什么需要通配符？
 
-Java 泛型中的通配符主要有两种形式：
-- `<? extends T>`: 上界通配符，表示类型参数是 T 或 T 的子类
-- `<? super T>`: 下界通配符，表示类型参数是 T 或 T 的父类
+泛型在 Java 中是不协变的（invariant）：`List<Dog>` 不是 `List<Animal>` 的子类型，即使 `Dog extends Animal`。
 
-## 2. `<? extends T>` 上界通配符
+```java
+List<Dog> dogs = new ArrayList<>();
+List<Animal> animals = dogs;  // ❌ 编译错误！
+```
 
-### 特点
-- 可以从集合中**读取**元素，并且保证读取的元素是 T 类型或其子类型
-- 不能向集合中**添加**元素（除了 null），因为无法确保添加的元素符合通配符的未知类型
+这个限制是正确的——如果允许赋值，就可以往 `dogs`（实际是 `List<Dog>`）里放 `Cat`，破坏类型安全。
 
-### 使用场景
-- 频繁从集合中读取数据的场景
-- 当你只需要读取集合元素并且不需要修改集合时
-- 作为方法的返回类型或参数类型，表示接受任何 T 或 T 的子类型的集合
+但这带来了新问题：`printAnimals(List<Animal> list)` 无法接收 `List<Dog>`，尽管我们只是想读取元素打印。通配符解决了这个矛盾。
 
-## 3. `<? super T>` 下界通配符
+---
 
-### 特点
-- 可以向集合中**添加** T 类型或 T 的子类型的元素
-- 从集合中读取元素时，只能将其视为 Object 类型，因为无法确定具体是哪个父类
+## 1.2 上界通配符 `<? extends T>`：Producer（只读）
 
-### 使用场景
-- 频繁向集合中添加数据的场景
-- 当你需要写入特定类型的元素到集合中时
-- 作为方法的参数类型，表示接受任何 T 或 T 的父类型的集合
+```java
+// PECSPrincipleDemo.java → printAnimals()
+public static void printAnimals(List<? extends Animal> list) {
+    for (Animal animal : list) {  // ✅ 可以读取，元素保证是 Animal 或其子类
+        System.out.println(animal.getName());
+    }
+    // list.add(new Dog());  // ❌ 编译错误！无法写入
+}
 
-## 4. PECS 原则 (Producer Extends, Consumer Super)
+// 调用时接受所有 Animal 的子类型列表
+printAnimals(animals);  // ✅
+printAnimals(dogs);     // ✅
+printAnimals(huskies);  // ✅
+```
 
-- **Producer Extends**: 如果你需要从集合中读取类型 T 的数据，使用 `<? extends T>`
-- **Consumer Super**: 如果你需要向集合中写入类型 T 的数据，使用 `<? super T>`
+**为什么不能写入？** 假设 `list` 实际是 `List<Husky>`，写入一个 `Dog` 就破坏了 Husky 的类型约束。编译器无法在编译期确定 `?` 的具体类型，因此拒绝任何写入（null 除外）。
 
-## 5. 无界通配符 `<?>`
+**记忆法**：`extends`（上界） → **Producer**（生产数据供读取）→ **只读**
 
-- 表示可以是任何类型
-- 通常用于与泛型类型无关的操作，如检查集合是否为空
+---
 
-## 6. 类型擦除与安全转换
+## 1.3 下界通配符 `<? super T>`：Consumer（只写）
 
-在使用无泛型限制的集合赋值给有泛型限制的集合时，需要注意：
-- 编译器无法在运行时检查元素类型（类型擦除）
-- 使用集合元素前应进行 `instanceof` 判断，避免 `ClassCastException` 异常
+```java
+// PECSPrincipleDemo.java → addHuskies()
+public static void addHuskies(List<? super Husky> list) {
+    list.add(new Husky("哈士奇"));  // ✅ 可以写入，Husky 一定兼容 list 的实际类型
+    // Husky h = list.get(0);  // ❌ 只能读出 Object 类型，失去了类型信息
+}
 
-## 7. 最佳实践
+// 调用时接受所有 Husky 的父类型列表
+addHuskies(dogList);     // ✅ List<Dog>，Dog 是 Husky 的父类
+addHuskies(animalList);  // ✅ List<Animal>，Animal 是 Husky 的父类
+// addHuskies(huskyOnlyList);  // ❌ 如果 list 是 List<Cat>（Cat 是 Husky 的父类？不是），无法保证
+```
 
-1. 明确方法的用途：是读取数据还是写入数据
-2. 读取数据优先使用 `<? extends T>`
-3. 写入数据优先使用 `<? super T>`
-4. 既读又写时，不使用通配符，直接使用具体类型 `<T>`
-5. 在转换不同泛型类型的集合时，注意进行类型检查
+**为什么不能安全读取类型化元素？** 假设 `list` 是 `List<Animal>`，读出来的可能是 Dog、Cat 等任何 Animal，编译器无法确定具体类型，只能给 `Object`。
 
-## 8. 与里氏替换原则（LSP）的关系
+**记忆法**：`super`（下界） → **Consumer**（消费数据进行写入）→ **只写**
 
-- 定义：里氏替换原则要求子类型必须能替换其父类型而不破坏程序行为。
-- `<? extends T>` 支持协变读取：当方法参数为 `List<? extends Animal>` 时，`List<Dog>`、`List<Husky>` 等子类型集合均可被替换传入，符合 LSP 对"在需要父类型的地方可使用子类型"的要求；限制"只读不写"正是为了保持替换后的类型安全。
-- `<? super T>` 支持逆变写入：当方法参数为 `List<? super Husky>` 时，`List<Dog>`、`List<Animal>` 等父类型集合均可被替换传入；此时只能安全地向其中写入 `Husky`（或其子类），读取则退化为 `Object`，以避免破坏替换后的行为。
-- 示例（见 `java-core/src/main/java/com/fragment/core/generics/PECSPrincipleDemo.java`）：
-  - `printAnimals(List<? extends Animal>)`：仅读取，展示协变。
-  - `addHuskies(List<? super Husky>)`：仅写入，展示逆变。
-  - `copy(List<? super T>, List<? extends T>)`：读写两端同时遵循上述原则。
-- 小结：PECS 是在 Java 泛型层面将 LSP 的可替换性通过协变/逆变具体化，从而在编译期获得更强的类型安全与 API 兼容性。
+---
+
+## 1.4 PECS 原则：Producer Extends, Consumer Super
+
+```java
+// PECSPrincipleDemo.java → copy()：经典的 PECS 双通配符
+public static <T> void copy(List<? super T> dest, List<? extends T> src) {
+    for (T item : src) {  // src 是 Producer（只读）→ extends
+        dest.add(item);   // dest 是 Consumer（只写）→ super
+    }
+}
+
+// 使用：把 List<Dog> 复制到 List<Animal>
+List<Dog> sourceDogs = Arrays.asList(new Dog("狗1"), new Dog("狗2"));
+List<Animal> targetAnimals = new ArrayList<>();
+copy(targetAnimals, sourceDogs);  // ✅
+```
+
+`Collections.copy(dest, src)` 就是这个签名，JDK 源码中大量使用 PECS。
+
+---
+
+## 1.5 无界通配符 `<?>`
+
+```java
+// 只关心对象存在，不关心类型时使用
+public static void printSize(List<?> list) {
+    System.out.println("size: " + list.size());  // ✅
+    // list.add(new Object());  // ❌ 无法写入（除 null）
+    Object obj = list.get(0);  // ✅ 只能读出 Object
+}
+
+// 与 List<Object> 的区别：
+List<String> strings = new ArrayList<>();
+printSize(strings);  // ✅ List<?> 可以接收
+
+List<Object> objects = strings;  // ❌ List<Object> 无法接收 List<String>
+```
+
+---
+
+## 1.6 本章总结
+
+- **泛型不协变**：`List<Dog>` 不是 `List<Animal>` 的子类型，通配符是解决方案
+- **`? extends T`（上界）**：Producer，只读，可接受 T 的所有子类型列表
+- **`? super T`（下界）**：Consumer，只写，可接受 T 的所有父类型列表
+- **PECS 原则**：函数参数是 Producer 用 extends，是 Consumer 用 super
+- **`<?>`**：无界通配符，完全只读，等价于 `? extends Object`
+
+> **本章对应演示代码**：`PECSPrincipleDemo.java`（Producer Extends、Consumer Super、copy 双通配符完整演示）
+
+**继续阅读**：[02_GenericsUsageSummary.md](./02_GenericsUsageSummary.md)

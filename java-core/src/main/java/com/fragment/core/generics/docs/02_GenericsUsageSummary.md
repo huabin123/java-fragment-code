@@ -1,232 +1,218 @@
-# Java 泛型使用总结
+# 第二章：泛型使用总结
 
-## 1. 泛型通配符的选择原则
+## 2.1 泛型的三种使用形式
 
-### 1.1 PECS 原则 (Producer Extends, Consumer Super)
-
-- **Producer Extends**: 当你需要从集合中读取数据时，使用 `<? extends T>`
-  - 例如：`List<? extends Number> numbers = new ArrayList<Integer>();`
-  - 可以安全地读取元素，但不能添加元素（除了 null）
-
-- **Consumer Super**: 当你需要向集合中写入数据时，使用 `<? super T>`
-  - 例如：`List<? super Integer> numbers = new ArrayList<Number>();`
-  - 可以安全地添加 T 类型或其子类型的元素，但读取时只能作为 Object 类型
-
-### 1.2 选择指南
-
-- 频繁从集合中读取数据时，使用 `<? extends T>`
-- 频繁向集合中写入数据时，使用 `<? super T>`
-- 既需要读取又需要写入时，不使用通配符，直接使用具体类型 `<T>`
-
-## 2. 常见泛型使用场景
-
-### 2.1 集合类
+### 泛型类
 
 ```java
-// 读取场景（Producer Extends）
-List<? extends Number> numbers = new ArrayList<Integer>();
-Number num = numbers.get(0);  // 安全
+// GenericRepositoryDemo.java 的核心类
+public class GenericRepository<T, ID> {
+    private final Map<ID, T> storage = new HashMap<>();
 
-// 写入场景（Consumer Super）
-List<? super Integer> integers = new ArrayList<Number>();
-integers.add(42);  // 安全
-```
+    public void save(T entity, ID id) {
+        storage.put(id, entity);
+    }
 
-### 2.2 方法参数
+    public T findById(ID id) {
+        return storage.get(id);
+    }
 
-```java
-// 读取场景
-public void printAll(List<? extends Number> list) {
-    for (Number n : list) {
-        System.out.println(n);
+    public List<T> findAll() {
+        return new ArrayList<>(storage.values());
     }
 }
 
-// 写入场景
-public void addIntegers(List<? super Integer> list) {
-    list.add(42);
-    list.add(10);
-}
+// 使用：类型参数在实例化时确定
+GenericRepository<User, Long> userRepo = new GenericRepository<>();
+userRepo.save(new User("张三"), 1L);
+User user = userRepo.findById(1L);  // 无需强制转型
 ```
 
-### 2.3 泛型方法
+### 泛型接口
 
 ```java
-// 泛型方法定义
-public <T> T firstOrNull(List<T> list) {
-    return list.isEmpty() ? null : list.get(0);
-}
-
-// 结合 PECS 原则的泛型方法
-public <T> void copy(List<? super T> dest, List<? extends T> src) {
-    for (int i = 0; i < src.size(); i++) {
-        dest.add(src.get(i));
-    }
-}
-```
-
-## 3. 类型安全转换
-
-在使用无泛型限制的集合赋值给泛型限制的集合时，需要注意类型安全：
-
-```java
-// 不安全的转换
-List rawList = new ArrayList();
-rawList.add("string");
-rawList.add(42);
-
-List<String> stringList = rawList;  // 编译警告但不报错
-String s = stringList.get(0);  // 安全
-String s2 = stringList.get(1);  // 运行时 ClassCastException
-```
-
-正确的做法是使用 `instanceof` 进行类型检查：
-
-```java
-List rawList = new ArrayList();
-rawList.add("string");
-rawList.add(42);
-
-for (Object item : rawList) {
-    if (item instanceof String) {
-        String s = (String) item;
-        // 安全地使用字符串
-    } else {
-        // 处理其他类型
-    }
-}
-```
-
-## 4. 泛型的局限性
-
-### 4.1 类型擦除
-
-Java 泛型在编译时会进行类型擦除，运行时不保留泛型类型信息：
-
-```java
-List<String> stringList = new ArrayList<>();
-List<Integer> intList = new ArrayList<>();
-
-// 运行时类型相同
-System.out.println(stringList.getClass() == intList.getClass());  // true
-```
-
-### 4.2 无法创建泛型数组
-
-不能直接创建泛型类型的数组：
-
-```java
-// 编译错误
-List<String>[] array = new ArrayList<String>[10];
-
-// 替代方案
-List<List<String>> listOfLists = new ArrayList<>();
-```
-
-### 4.3 不能使用基本类型作为类型参数
-
-必须使用包装类：
-
-```java
-// 错误
-List<int> intList;
-
-// 正确
-List<Integer> intList = new ArrayList<>();
-```
-
-## 5. 泛型最佳实践
-
-1. **明确方法的用途**：确定方法是主要用于读取数据还是写入数据，据此选择合适的通配符
-
-2. **避免使用原始类型**：始终使用参数化类型，避免使用原始类型（如 `List` 而不是 `List<String>`）
-
-3. **谨慎使用无界通配符**：`<?>` 适用于与泛型类型无关的操作，如检查列表是否为空
-
-4. **使用泛型方法增加灵活性**：当方法的泛型类型与类的泛型类型无关时，使用泛型方法
-
-5. **设计接口时考虑泛型**：设计通用接口和抽象类时，合理使用泛型提高代码复用性
-
-6. **注意类型安全**：在类型转换时进行必要的检查，避免运行时异常
-
-7. **不要过度使用泛型**：在简单场景下，过度使用泛型可能会使代码变得复杂难懂
-
-## 6. 实际应用示例
-
-### 6.1 通用仓库模式
-
-```java
-interface Repository<T, ID> {
-    T save(T entity);
-    Optional<T> findById(ID id);
+// 定义通用的 CRUD 接口
+public interface Repository<T, ID> {
+    void save(T entity);
+    T findById(ID id);
     List<T> findAll();
     void delete(ID id);
 }
 
-class UserRepository implements Repository<User, Long> {
-    // 实现方法
-}
+// 实现时可以指定具体类型，也可以继续使用类型参数
+public class UserRepository implements Repository<User, Long> { ... }
+public class GenericJpaRepository<T, ID> implements Repository<T, ID> { ... }
 ```
 
-### 6.2 通用服务层
+### 泛型方法
 
 ```java
-class GenericService<T, ID> {
-    private Repository<T, ID> repository;
-    
-    public GenericService(Repository<T, ID> repository) {
-        this.repository = repository;
-    }
-    
-    public T save(T entity) {
-        return repository.save(entity);
-    }
-    
-    public Optional<T> findById(ID id) {
-        return repository.findById(id);
-    }
+// 类型参数在方法调用时推断
+public static <T> List<T> singletonList(T element) {
+    List<T> list = new ArrayList<>();
+    list.add(element);
+    return list;
+}
+
+// 调用时类型自动推断，无需指定
+List<String> strs = singletonList("hello");
+List<Integer> nums = singletonList(42);
+
+// 多类型参数的泛型方法
+public static <K, V> Map<K, V> mapOf(K key, V value) {
+    Map<K, V> map = new HashMap<>();
+    map.put(key, value);
+    return map;
 }
 ```
 
-### 6.3 结果包装类
+---
+
+## 2.2 有界类型参数：`<T extends Comparable<T>>`
 
 ```java
-class Result<T> {
-    private final boolean success;
-    private final T data;
-    private final String message;
-    
-    private Result(boolean success, T data, String message) {
-        this.success = success;
-        this.data = data;
-        this.message = message;
+// GenericRepositoryDemo.java → 排序功能
+public static <T extends Comparable<T>> T findMax(List<T> list) {
+    T max = list.get(0);
+    for (T item : list) {
+        if (item.compareTo(max) > 0) max = item;
     }
-    
-    public static <T> Result<T> success(T data) {
-        return new Result<>(true, data, null);
-    }
-    
-    public static <T> Result<T> failure(String message) {
-        return new Result<>(false, null, message);
+    return max;
+}
+
+// 约束：T 必须实现 Comparable<T>，保证 compareTo 方法存在
+int maxAge = findMax(Arrays.asList(18, 25, 30, 16));  // 30
+String maxStr = findMax(Arrays.asList("apple", "banana", "cherry"));  // cherry
+```
+
+### 多重边界：`<T extends Comparable<T> & Serializable>`
+
+```java
+// T 必须同时满足多个约束，类约束必须放第一位
+public <T extends Cloneable & Serializable> void processAndSend(T obj) { ... }
+
+// 实际使用：Spring 的泛型约束
+public <T extends HttpMessage> T readWithMessageConverters(
+    HttpInputMessage inputMessage, Class<T> targetType) { ... }
+```
+
+---
+
+## 2.3 GenericPitfallsDemo：泛型常见陷阱
+
+`GenericPitfallsDemo.java` 归纳了 5 个高频陷阱：
+
+### 陷阱一：泛型数组创建
+
+```java
+// ❌ 编译错误：无法直接创建泛型数组
+List<String>[] array = new ArrayList<String>[10];
+
+// ✅ 方案1：使用 @SuppressWarnings
+@SuppressWarnings("unchecked")
+List<String>[] array = new ArrayList[10];
+
+// ✅ 方案2：使用 List of List
+List<List<String>> listOfList = new ArrayList<>();
+```
+
+### 陷阱二：原生类型（Raw Type）污染
+
+```java
+// ❌ 原生类型：丢失类型安全，只为兼容旧代码
+List rawList = new ArrayList();
+rawList.add("string");
+rawList.add(42);  // 编译通过，运行时炸
+String s = (String) rawList.get(1);  // ClassCastException
+
+// ✅ 始终使用带类型参数的泛型
+List<String> typedList = new ArrayList<>();
+```
+
+### 陷阱三：泛型和 instanceof
+
+```java
+// ❌ 运行时类型擦除，无法用 instanceof 检查泛型参数
+if (list instanceof List<String>) { }  // 编译错误
+
+// ✅ 只能检查原生类型
+if (list instanceof List) { }  // OK，但失去了 String 信息
+
+// ✅ 使用 Class 对象辅助
+public <T> boolean isListOf(List<?> list, Class<T> type) {
+    return list.stream().allMatch(type::isInstance);
+}
+```
+
+### 陷阱四：静态上下文中不能使用类型参数
+
+```java
+public class Container<T> {
+    // ❌ 静态字段不能是 T
+    private static T instance;  // 编译错误
+
+    // ❌ 静态方法不能引用 T
+    public static T create() { }  // 编译错误
+
+    // ✅ 静态泛型方法（独立的类型参数）
+    public static <E> Container<E> of(E element) {
+        return new Container<>(element);
     }
 }
 ```
 
-## 7. 总结
+### 陷阱五：泛型方法重载陷阱
 
-- 使用 `<? extends T>` 从集合中读取数据（Producer Extends）
-- 使用 `<? super T>` 向集合中写入数据（Consumer Super）
-- 在类型转换时进行必要的类型检查，避免 `ClassCastException`
-- 理解泛型的局限性，如类型擦除和不能创建泛型数组
-- 合理设计泛型接口和类，提高代码复用性和类型安全性
+```java
+// ❌ 类型擦除后方法签名相同，编译错误
+public void process(List<String> list) { }
+public void process(List<Integer> list) { }  // 编译错误：same erasure
 
-## 8. 与里氏替换原则（LSP）的关系
+// ✅ 用不同方法名区分
+public void processStrings(List<String> list) { }
+public void processIntegers(List<Integer> list) { }
+```
 
-- 定义：里氏替换原则要求子类型必须能替换其父类型而不破坏程序行为。
-- `<? extends T>` 支持协变读取：当方法参数为 `List<? extends Animal>` 时，`List<Dog>`、`List<Husky>` 等子类型集合均可被替换传入，符合 LSP 对"在需要父类型的地方可使用子类型"的要求；限制"只读不写"正是为了保持替换后的类型安全。
-- `<? super T>` 支持逆变写入：当方法参数为 `List<? super Husky>` 时，`List<Dog>`、`List<Animal>` 等父类型集合均可被替换传入；此时只能安全地向其中写入 `Husky`（或其子类），读取则退化为 `Object`，以避免破坏替换后的行为。
-- 示例（见 `java-core/src/main/java/com/fragment/core/generics/PECSPrincipleDemo.java`）：
-  - `printAnimals(List<? extends Animal>)`：仅读取，展示协变。
-  - `addHuskies(List<? super Husky>)`：仅写入，展示逆变。
-  - `copy(List<? super T>, List<? extends T>)`：读写两端同时遵循上述原则。
-- 小结：PECS 是在 Java 泛型层面将 LSP 的可替换性通过协变/逆变具体化，从而在编译期获得更强的类型安全与 API 兼容性。
+---
+
+## 2.4 泛型的实用设计模式
+
+### Builder 模式的泛型化
+
+```java
+// 支持链式调用并保持类型安全
+public class Builder<T extends Builder<T>> {
+    @SuppressWarnings("unchecked")
+    public T name(String name) {
+        this.name = name;
+        return (T) this;  // 返回具体子类类型
+    }
+}
+```
+
+### 工厂方法模式
+
+```java
+// GenericRepositoryDemo.java 中的工厂模式
+public interface EntityFactory<T> {
+    T create(Map<String, Object> properties);
+}
+
+// 通过 Class 对象反射创建实例
+public static <T> T create(Class<T> clazz) throws Exception {
+    return clazz.newInstance();
+}
+```
+
+---
+
+## 2.5 本章总结
+
+- **三种形式**：泛型类（实例化时确定）、泛型接口（实现时可固化或继续参数化）、泛型方法（调用时推断）
+- **有界参数**：`extends` 约束功能（确保方法存在），多重边界类约束放第一位
+- **五大陷阱**：泛型数组、原生类型污染、instanceof 检查、静态上下文、方法重载
+- **设计模式**：Builder 的 `<T extends Builder<T>>` 保持链式调用类型安全
+
+> **本章对应演示代码**：`GenericRepositoryDemo.java`（泛型 CRUD 仓库）、`GenericPitfallsDemo.java`（5 大陷阱详解）
+
+**继续阅读**：[03_GenericsErasure_FakeVsReal.md](./03_GenericsErasure_FakeVsReal.md)

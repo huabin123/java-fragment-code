@@ -52,6 +52,83 @@ collections/
 │       ├── DatabaseQueryCache.java                  # 数据库查询缓存
 │       └── ConfigurationManager.java                # 配置管理器
 │
+├── queue/                                            # Queue专题（ArrayDeque / PriorityQueue / BlockingQueue）
+│   ├── demo/                                         # 演示代码
+│   │   ├── ArrayDequeDemo.java                      # ArrayDeque基础使用演示（队列/栈/双端队列）
+│   │   ├── PriorityQueueDemo.java                   # PriorityQueue演示（最小堆、最大堆、TopK）
+│   │   ├── BlockingQueueDemo.java                   # BlockingQueue系列演示（ABQ/LBQ/PBQ/SQ）
+│   │   └── ConcurrentLinkedQueueDemo.java           # 无锁并发队列演示
+│   ├── docs/
+│   │   ├── 01_Queue体系与设计思想.md
+│   │   ├── 02_ArrayDeque原理与实现.md
+│   │   ├── 03_PriorityQueue堆结构与应用.md
+│   │   ├── 04_BlockingQueue并发设计与选型.md
+│   │   └── 05_Queue最佳实践与实战场景.md
+│   └── project/                                      # 实际项目Demo
+│       ├── DelayTaskScheduler.java                  # 延迟任务调度器（DelayQueue实战）
+│       └── ProducerConsumerPool.java                # 生产者-消费者线程池（ArrayBlockingQueue实战）
+│
+├── arraylist/                                        # ArrayList专题
+│   ├── demo/
+│   │   ├── ArrayListBasicDemo.java                  # 增删改查、遍历、subList
+│   │   ├── ArrayListInternalsDemo.java              # 扩容机制、trimToSize、ensureCapacity
+│   │   ├── ArrayListPerformanceDemo.java            # ArrayList vs LinkedList 性能对比
+│   │   └── ArrayListConcurrentDemo.java             # 线程不安全演示、synchronizedList、CopyOnWriteArrayList
+│   ├── docs/
+│   │   ├── 01_ArrayList的必要性与应用场景.md
+│   │   ├── 02_ArrayList核心原理与扩容机制.md
+│   │   ├── 03_ArrayList性能分析与选型.md
+│   │   ├── 04_ArrayList并发安全.md
+│   │   └── 05_ArrayList最佳实践.md
+│   └── project/
+│       ├── StudentGradeManager.java                 # 学生成绩管理系统
+│       └── EventBus.java                            # 简单事件总线（CopyOnWriteArrayList）
+│
+├── treemap/                                          # TreeMap专题
+│   ├── demo/
+│   │   ├── TreeMapBasicDemo.java                    # 自然排序、自定义Comparator、导航方法、范围视图
+│   │   ├── TreeMapInternalsDemo.java                # 红黑树平衡性、key要求、性能对比
+│   │   └── TreeMapApplicationDemo.java              # 词频统计、时间线、区间映射、排行榜
+│   ├── docs/
+│   │   ├── 01_TreeMap的必要性与应用场景.md
+│   │   ├── 02_TreeMap核心原理与红黑树.md
+│   │   ├── 03_TreeMap导航与范围查询.md
+│   │   ├── 04_TreeMap_vs_HashMap_vs_LinkedHashMap.md
+│   │   └── 05_TreeMap最佳实践.md
+│   └── project/
+│       ├── RangePriceIndex.java                     # 价格区间索引（floorKey区间映射）
+│       └── ScheduleManager.java                     # 日程管理器（时间线+冲突检测）
+│
+├── concurrenthashmap/                               # ConcurrentHashMap专题
+│   ├── demo/
+│   │   ├── ConcurrentHashMapBasicDemo.java          # 基础CRUD、原子操作、批量操作
+│   │   ├── ConcurrentHashMapInternalsDemo.java      # 并发安全验证、性能对比、size弱一致
+│   │   └── ConcurrentHashMapPatternDemo.java        # 计数、分组统计、懒加载缓存、去重
+│   ├── docs/
+│   │   ├── 01_ConcurrentHashMap的必要性与应用场景.md
+│   │   ├── 02_ConcurrentHashMap内部原理.md
+│   │   ├── 03_ConcurrentHashMap原子操作详解.md
+│   │   ├── 04_ConcurrentHashMap_vs_其他并发Map.md
+│   │   └── 05_ConcurrentHashMap最佳实践.md
+│   └── project/
+│       ├── OnlineUserRegistry.java                  # 在线用户注册表
+│       └── RequestRateLimiter.java                  # 请求限流器（ConcurrentHashMap + LongAdder）
+│
+├── set/                                              # Set专题（HashSet / LinkedHashSet / TreeSet）
+│   ├── demo/
+│   │   ├── SetBasicDemo.java                        # 三种Set对比、集合运算、contains性能
+│   │   ├── SetInternalsDemo.java                    # hashCode/equals陷阱、TreeSet排序、可变对象陷阱
+│   │   └── SetApplicationDemo.java                  # 去重、权限检查、差异分析、UV统计
+│   ├── docs/
+│   │   ├── 01_Set的必要性与三种实现.md
+│   │   ├── 02_Set的工作原理与hashCode陷阱.md
+│   │   ├── 03_Set的集合运算与实战应用.md
+│   │   ├── 04_TreeSet导航与排序.md
+│   │   └── 05_Set最佳实践.md
+│   └── project/
+│       ├── TagSystem.java                           # 标签系统（交集查询、Jaccard相似度）
+│       └── AccessControlList.java                  # 访问控制列表（RBAC权限控制）
+│
 └── README.md                                         # 本文件
 ```
 
@@ -529,6 +606,30 @@ java -cp target/classes com.fragment.core.collections.linkedhashmap.demo.LinkedH
 
 ---
 
+### 4. Queue 演示
+
+```bash
+# ArrayDeque 演示（队列/栈/双端队列）
+java -cp target/classes com.fragment.core.collections.queue.demo.ArrayDequeDemo
+
+# PriorityQueue 演示（最小堆/最大堆/TopK）
+java -cp target/classes com.fragment.core.collections.queue.demo.PriorityQueueDemo
+
+# BlockingQueue 系列演示
+java -cp target/classes com.fragment.core.collections.queue.demo.BlockingQueueDemo
+
+# ConcurrentLinkedQueue 演示
+java -cp target/classes com.fragment.core.collections.queue.demo.ConcurrentLinkedQueueDemo
+
+# DelayQueue 延迟任务调度器
+java -cp target/classes com.fragment.core.collections.queue.project.DelayTaskScheduler
+
+# 生产者-消费者线程池
+java -cp target/classes com.fragment.core.collections.queue.project.ProducerConsumerPool
+```
+
+---
+
 ## 💡 核心知识点
 
 ### 1. HashMap的核心设计
@@ -590,6 +691,38 @@ Entry节点结构：
 
 ---
 
+### 4. Queue 体系的核心设计
+
+```
+Java Queue 体系：
+
+Queue（接口）
+├── Deque（双端队列接口）
+│   ├── ArrayDeque   ← 推荐：数组实现，无锁，作为栈/队列性能优于 LinkedList
+│   └── LinkedList   ← 链表实现，有额外内存开销
+│
+├── PriorityQueue    ← 最小堆，poll() 始终返回最小元素，O(log n) 入队/出队
+│
+└── BlockingQueue（阻塞队列接口）
+    ├── ArrayBlockingQueue    ← 有界，单锁，适合限流场景
+    ├── LinkedBlockingQueue   ← 可选有界，双锁（读写分离），高吞吐
+    ├── PriorityBlockingQueue ← 无界，优先级阻塞队列
+    ├── SynchronousQueue      ← 零容量，线程间直接握手传递
+    └── DelayQueue            ← 无界，延迟到期才可出队
+
+ConcurrentLinkedQueue  ← 无锁 CAS，非阻塞，高并发读写
+
+选型速查：
+- 单线程 栈/队列   → ArrayDeque
+- 优先级处理        → PriorityQueue
+- 生产者-消费者     → LinkedBlockingQueue（高吞吐）/ ArrayBlockingQueue（严格限流）
+- 延迟任务          → DelayQueue
+- 线程间直接传递    → SynchronousQueue
+- 高并发非阻塞      → ConcurrentLinkedQueue
+```
+
+---
+
 ## ⚠️ 常见陷阱
 
 ### 1. HashMap的线程安全问题
@@ -642,6 +775,40 @@ LinkedHashMap<String, Object> cache = new LinkedHashMap<String, Object>(16, 0.75
 
 ---
 
+### 4. Queue 的常见陷阱
+
+```java
+// ❌ 陷阱1：用 Stack 类做栈（继承自 Vector，所有方法加 synchronized，单线程浪费）
+Stack<String> stack = new Stack<>();
+
+// ✅ 正确：用 ArrayDeque
+Deque<String> stack = new ArrayDeque<>();
+
+// ❌ 陷阱2：LinkedBlockingQueue 不指定容量（近似无界，队列堆积打爆内存）
+BlockingQueue<Task> queue = new LinkedBlockingQueue<>(); // 默认 Integer.MAX_VALUE
+
+// ✅ 正确：指定合理容量，超出时阻塞生产者（反压）
+BlockingQueue<Task> queue = new LinkedBlockingQueue<>(1000);
+
+// ❌ 陷阱3：PriorityQueue 的 forEach/迭代器不保证顺序
+PriorityQueue<Integer> pq = new PriorityQueue<>();
+pq.offer(3); pq.offer(1); pq.offer(2);
+pq.forEach(System.out::println); // 输出顺序不保证是 1,2,3！
+
+// ✅ 正确：要有序输出必须用 poll()
+while (!pq.isEmpty()) {
+    System.out.println(pq.poll()); // 1, 2, 3
+}
+
+// ❌ 陷阱4：高并发下频繁调用 ConcurrentLinkedQueue.size()（O(n) 操作）
+if (queue.size() == 0) { ... } // 性能差
+
+// ✅ 正确：用 isEmpty()
+if (queue.isEmpty()) { ... } // O(1)
+```
+
+---
+
 ## 📊 性能对比
 
 ### HashMap vs TreeMap vs LinkedHashMap
@@ -673,6 +840,21 @@ LinkedHashMap<String, Object> cache = new LinkedHashMap<String, Object>(16, 0.75
 
 ---
 
+### Queue 系列对比
+
+| 实现类 | 有界 | 阻塞 | 线程安全 | 有序 | 允许null | 适用场景 |
+|--------|------|------|---------|------|---------|--------|
+| **ArrayDeque** | 否（自动扩容） | 否 | 否 | FIFO/LIFO | ❌ | 单线程栈/队列 |
+| **PriorityQueue** | 否 | 否 | 否 | 优先级 | ❌ | 单线程优先级处理 |
+| **ArrayBlockingQueue** | ✅ 固定 | ✅ | ✅ | FIFO | ❌ | 严格限流 |
+| **LinkedBlockingQueue** | 可选 | ✅ | ✅ | FIFO | ❌ | 高吞吐生产消费 |
+| **PriorityBlockingQueue** | 否 | ✅(take) | ✅ | 优先级 | ❌ | 多线程优先级 |
+| **SynchronousQueue** | 0（无容量） | ✅ | ✅ | - | ❌ | 线程间直接传递 |
+| **DelayQueue** | 否 | ✅(take) | ✅ | 到期时间 | ❌ | 延迟/定时任务 |
+| **ConcurrentLinkedQueue** | 否 | 否 | ✅（CAS） | FIFO | ❌ | 高并发非阻塞 |
+
+---
+
 ## 📖 参考资料
 
 ### 官方文档
@@ -692,6 +874,8 @@ LinkedHashMap<String, Object> cache = new LinkedHashMap<String, Object>(16, 0.75
 
 - [HashMap源码分析](https://tech.meituan.com/2016/06/24/java-hashmap.html)
 - [ConcurrentHashMap源码分析](https://tech.meituan.com/2018/07/13/java-concurrenthashmap.html)
+- [Java BlockingQueue API](https://docs.oracle.com/javase/8/docs/api/java/util/concurrent/BlockingQueue.html)
+- [Java ArrayDeque API](https://docs.oracle.com/javase/8/docs/api/java/util/ArrayDeque.html)
 
 ---
 
@@ -737,12 +921,19 @@ LinkedHashMap<String, Object> cache = new LinkedHashMap<String, Object>(16, 0.75
 - 📚 学会分析和解决性能问题
 - ✨ 了解实际项目中的应用场景
 
+### Queue
+
+1. ✅ **必要性**：理解 Queue/Deque/BlockingQueue 各自解决的问题
+2. ✅ **ArrayDeque**：掌握数组循环双端队列，替代 Stack 和 LinkedList 的推荐方案
+3. ✅ **PriorityQueue**：理解最小堆原理，掌握 TopK 等面试经典题
+4. ✅ **BlockingQueue 系列**：掌握 ABQ/LBQ/PBQ/SQ 的区别与选型
+5. ✅ **实战应用**：延迟任务调度、生产者-消费者模式
+
 **继续学习**：
 
 - 深入学习ConcurrentHashMap
 - 研究TreeMap和红黑树
 - 学习ArrayList和Vector
-- 了解Queue和Deque接口
 - 研究Java 8的Stream API
 
 ---

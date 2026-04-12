@@ -1,793 +1,244 @@
-# LinkedList最佳实践与高级应用
+# 第五章：LinkedList 最佳实践与高级应用
 
-## 1. 正确的使用方式
+## 5.1 遍历的正确姿势
 
-### 1.1 作为List使用
+LinkedList 的遍历选择直接决定代码质量，从性能角度从高到低排列：
 
 ```java
-// ✅ 正确：顺序遍历
-List<String> list = new LinkedList<>();
-list.add("A");
-list.add("B");
-list.add("C");
+// LinkedListPerformanceDemo.java → testIteration() 验证了以下结论
 
+// ✅ 方式1：foreach（推荐，简洁，O(n)）
 for (String item : list) {
-    System.out.println(item);
+    process(item);
 }
 
-// ❌ 错误：随机访问
+// ✅ 方式2：Iterator（需要在遍历中删除时用）
+Iterator<String> it = list.iterator();
+while (it.hasNext()) {
+    String item = it.next();
+    if (shouldRemove(item)) it.remove();  // 安全删除
+}
+
+// ✅ 方式3：ListIterator（双向遍历或遍历中插入时用）
+ListIterator<String> lit = list.listIterator(list.size()); // 从尾部开始
+while (lit.hasPrevious()) {
+    String item = lit.previous();
+    if (needInsertAfter(item)) lit.add(newItem);  // O(1) 插入
+}
+
+// ✅ 方式4：Stream API（函数式，底层用迭代器）
+list.stream().filter(s -> s.startsWith("A")).forEach(System.out::println);
+
+// ❌ 绝对禁止：for + get(index)，O(n²)
 for (int i = 0; i < list.size(); i++) {
-    String item = list.get(i);  // O(n)，性能极差
+    list.get(i);  // 每次都从头/尾遍历，灾难性性能
 }
 ```
 
 ---
 
-### 1.2 作为Queue使用
+## 5.2 作为 Deque 的正确 API 选择
+
+当用 LinkedList 实现栈、队列、双端队列时，选用返回特殊值（而非抛异常）的方法：
 
 ```java
-// ✅ 推荐：使用Queue接口
-Queue<Task> queue = new LinkedList<>();
+// 队列（FIFO）
+Deque<String> queue = new LinkedList<>();
+queue.offerLast("A");    // 入队，等价于 offer()
+queue.pollFirst();       // 出队，等价于 poll()，空时返回 null 而非抛异常
+queue.peekFirst();       // 查看队首，等价于 peek()
 
-// 入队
-queue.offer(new Task("task1"));
-queue.offer(new Task("task2"));
-
-// 出队
-Task task = queue.poll();
-
-// 查看队首
-Task peek = queue.peek();
-```
-
-**Queue方法对比**：
-
-| 操作 | 抛异常 | 返回特殊值 |
-|------|-------|----------|
-| **插入** | add(e) | offer(e) |
-| **删除** | remove() | poll() |
-| **查看** | element() | peek() |
-
-**建议**：使用返回特殊值的方法（offer、poll、peek），更安全。
-
----
-
-### 1.3 作为Deque使用
-
-```java
-// ✅ 推荐：使用Deque接口
-Deque<String> deque = new LinkedList<>();
-
-// 头部操作
-deque.addFirst("A");
-deque.removeFirst();
-deque.getFirst();
-
-// 尾部操作
-deque.addLast("B");
-deque.removeLast();
-deque.getLast();
-
-// 作为栈使用
-deque.push("C");  // 等价于addFirst
-deque.pop();      // 等价于removeFirst
-```
-
----
-
-### 1.4 作为Stack使用
-
-```java
-// ❌ 不推荐：使用Stack类（继承自Vector，性能差）
-Stack<String> stack = new Stack<>();
-
-// ✅ 推荐：使用Deque接口
+// 栈（LIFO）
 Deque<String> stack = new LinkedList<>();
+stack.offerFirst("A");   // 压栈，等价于 push()
+stack.pollFirst();       // 弹栈，等价于 pop()，但 pop() 空时抛异常
+stack.peekFirst();       // 查看栈顶
 
-// 入栈
-stack.push("A");
-stack.push("B");
-stack.push("C");
-
-// 出栈
-String top = stack.pop();  // "C"
-
-// 查看栈顶
-String peek = stack.peek();  // "B"
-```
-
----
-
-## 2. 常见陷阱与解决方案
-
-### 2.1 陷阱1：使用for循环+get遍历
-
-**问题**：
-
-```java
-// ❌ 错误：时间复杂度O(n²)
-LinkedList<String> list = new LinkedList<>();
-for (int i = 0; i < list.size(); i++) {
-    String item = list.get(i);  // 每次都要遍历
-}
-```
-
-**解决方案**：
-
-```java
-// ✅ 正确：使用迭代器，时间复杂度O(n)
-for (String item : list) {
-    System.out.println(item);
-}
-
-// ✅ 正确：使用迭代器
-Iterator<String> iterator = list.iterator();
-while (iterator.hasNext()) {
-    String item = iterator.next();
-    System.out.println(item);
-}
-
-// ✅ 正确：JDK 8的forEach
-list.forEach(item -> System.out.println(item));
-```
-
----
-
-### 2.2 陷阱2：频繁在中间位置插入删除
-
-**问题**：
-
-```java
-// ❌ 错误：需要先遍历到指定位置
-LinkedList<String> list = new LinkedList<>();
-for (int i = 0; i < 10000; i++) {
-    list.add(5000, "element");  // 每次都要遍历到5000
-}
-```
-
-**解决方案**：
-
-```java
-// ✅ 正确：使用ArrayList
-List<String> list = new ArrayList<>();
-for (int i = 0; i < 10000; i++) {
-    list.add(5000, "element");
-}
-
-// ✅ 正确：如果必须用LinkedList，使用ListIterator
-LinkedList<String> list = new LinkedList<>();
-ListIterator<String> iterator = list.listIterator(5000);
-for (int i = 0; i < 10000; i++) {
-    iterator.add("element");
-}
-```
-
----
-
-### 2.3 陷阱3：没有使用合适的接口
-
-**问题**：
-
-```java
-// ❌ 不好：使用具体类
-LinkedList<String> list = new LinkedList<>();
-```
-
-**解决方案**：
-
-```java
-// ✅ 好：使用接口
-List<String> list = new LinkedList<>();
-
-// ✅ 更好：根据用途选择接口
-Queue<String> queue = new LinkedList<>();
+// 双端队列
 Deque<String> deque = new LinkedList<>();
-```
-
-**优势**：
-- 面向接口编程
-- 易于切换实现
-- 代码更灵活
-
----
-
-### 2.4 陷阱4：在迭代时直接修改
-
-**问题**：
-
-```java
-// ❌ 错误：抛出ConcurrentModificationException
-LinkedList<String> list = new LinkedList<>();
-list.add("A");
-list.add("B");
-list.add("C");
-
-for (String item : list) {
-    if (item.equals("B")) {
-        list.remove(item);  // 抛出异常
-    }
-}
-```
-
-**解决方案**：
-
-```java
-// ✅ 正确：使用迭代器的remove方法
-Iterator<String> iterator = list.iterator();
-while (iterator.hasNext()) {
-    String item = iterator.next();
-    if (item.equals("B")) {
-        iterator.remove();  // 正确
-    }
-}
-
-// ✅ 正确：JDK 8的removeIf
-list.removeIf(item -> item.equals("B"));
-
-// ✅ 正确：先收集要删除的元素
-List<String> toRemove = new ArrayList<>();
-for (String item : list) {
-    if (item.equals("B")) {
-        toRemove.add(item);
-    }
-}
-list.removeAll(toRemove);
+deque.offerFirst("前");   // 从前端插入
+deque.offerLast("后");    // 从后端插入
+deque.pollFirst();        // 从前端删除
+deque.pollLast();         // 从后端删除
 ```
 
 ---
 
-## 3. 高级应用场景
+## 5.3 浏览器历史记录的完整实现分析
 
-### 3.1 实现LRU缓存
-
-**需求**：实现一个LRU（Least Recently Used）缓存。
-
-**实现**：
+`BrowserHistoryManager.java` 是 LinkedList 作为双端容器的典型实战案例：
 
 ```java
-public class LRUCache<K, V> {
-    private final int capacity;
-    private final Map<K, Node<K, V>> map;
-    private final LinkedList<Node<K, V>> list;
-    
-    static class Node<K, V> {
-        K key;
-        V value;
-        
-        Node(K key, V value) {
-            this.key = key;
-            this.value = value;
-        }
-    }
-    
-    public LRUCache(int capacity) {
-        this.capacity = capacity;
-        this.map = new HashMap<>();
-        this.list = new LinkedList<>();
-    }
-    
-    public V get(K key) {
-        Node<K, V> node = map.get(key);
-        if (node == null) {
-            return null;
-        }
-        
-        // 移动到链表头部（最近使用）
-        list.remove(node);
-        list.addFirst(node);
-        
-        return node.value;
-    }
-    
-    public void put(K key, V value) {
-        Node<K, V> node = map.get(key);
-        
-        if (node != null) {
-            // 更新值
-            node.value = value;
-            // 移动到链表头部
-            list.remove(node);
-            list.addFirst(node);
-        } else {
-            // 新增节点
-            node = new Node<>(key, value);
-            
-            if (list.size() >= capacity) {
-                // 删除链表尾部（最久未使用）
-                Node<K, V> last = list.removeLast();
-                map.remove(last.key);
-            }
-            
-            list.addFirst(node);
-            map.put(key, node);
-        }
-    }
-    
-    public int size() {
-        return list.size();
-    }
+private final LinkedList<String> history = new LinkedList<>();
+private int currentIndex = -1;
+```
+
+**为什么用 LinkedList 而不是 ArrayList？**
+
+关键操作分析：
+- `visit(url)`：可能调用 `removeLast()`（清除前进历史）和 `addLast(url)`，都是 O(1)
+- `back()`：只改变 `currentIndex`，用 `history.get(currentIndex)`，O(n)
+- `forward()`：同上，O(n)
+
+坦诚地说，`BrowserHistoryManager` 中使用了 `history.get(currentIndex)` 按索引访问，这是 LinkedList 的弱项（O(n)）。更合适的实现应该用两个栈（`ArrayDeque`）分别存储后退历史和前进历史：
+
+```java
+// 更优化的两栈实现
+Deque<String> backStack = new ArrayDeque<>();   // 后退历史
+Deque<String> forwardStack = new ArrayDeque<>();// 前进历史
+
+void visit(String url) {
+    backStack.push(url);
+    forwardStack.clear();  // 访问新页面，清除前进历史
+}
+
+String back() {
+    if (backStack.size() <= 1) return backStack.peek();
+    forwardStack.push(backStack.pop());  // 当前页移到前进栈
+    return backStack.peek();            // 返回新的当前页
+}
+
+String forward() {
+    if (forwardStack.isEmpty()) return backStack.peek();
+    String page = forwardStack.pop();   // 前进栈弹出
+    backStack.push(page);              // 压入后退栈
+    return page;
 }
 ```
 
-**注意**：实际项目中更推荐使用LinkedHashMap实现LRU缓存，性能更好。
+这个两栈实现的所有操作都是 O(1)，是更正确的选型。
 
 ---
 
-### 3.2 实现浏览器历史记录
+## 5.4 线程安全的 LinkedList 使用
 
-**需求**：实现浏览器的前进、后退功能。
+LinkedList 本身不是线程安全的。根据使用场景选择替代方案：
 
-**实现**：
+**场景一：高并发生产者-消费者（推荐 LinkedBlockingQueue）**
 
 ```java
-public class BrowserHistory {
-    private final LinkedList<String> history;
-    private int currentIndex;
-    
-    public BrowserHistory() {
-        this.history = new LinkedList<>();
-        this.currentIndex = -1;
-    }
-    
-    // 访问新页面
-    public void visit(String url) {
-        // 删除当前位置之后的所有记录
-        while (history.size() > currentIndex + 1) {
-            history.removeLast();
-        }
-        
-        // 添加新页面
-        history.addLast(url);
-        currentIndex++;
-        
-        System.out.println("访问: " + url);
-    }
-    
-    // 后退
-    public String back() {
-        if (currentIndex > 0) {
-            currentIndex--;
-            String url = history.get(currentIndex);
-            System.out.println("后退到: " + url);
-            return url;
-        }
-        System.out.println("已经是第一页");
-        return null;
-    }
-    
-    // 前进
-    public String forward() {
-        if (currentIndex < history.size() - 1) {
-            currentIndex++;
-            String url = history.get(currentIndex);
-            System.out.println("前进到: " + url);
-            return url;
-        }
-        System.out.println("已经是最后一页");
-        return null;
-    }
-    
-    // 获取当前页面
-    public String current() {
-        if (currentIndex >= 0 && currentIndex < history.size()) {
-            return history.get(currentIndex);
-        }
-        return null;
-    }
-    
-    // 打印历史记录
-    public void printHistory() {
-        System.out.println("历史记录:");
-        for (int i = 0; i < history.size(); i++) {
-            String prefix = (i == currentIndex) ? "-> " : "   ";
-            System.out.println(prefix + history.get(i));
-        }
-    }
-}
+// 不要在多线程中直接使用 LinkedList + synchronized
+// ✅ 使用 LinkedBlockingQueue（内部链表结构，线程安全，支持阻塞）
+BlockingQueue<Task> queue = new LinkedBlockingQueue<>(1000);
 
-// 使用示例
-public class BrowserHistoryDemo {
-    public static void main(String[] args) {
-        BrowserHistory browser = new BrowserHistory();
-        
-        browser.visit("https://www.google.com");
-        browser.visit("https://www.github.com");
-        browser.visit("https://www.stackoverflow.com");
-        
-        browser.printHistory();
-        // 历史记录:
-        //    https://www.google.com
-        //    https://www.github.com
-        // -> https://www.stackoverflow.com
-        
-        browser.back();  // 后退到: https://www.github.com
-        browser.back();  // 后退到: https://www.google.com
-        
-        browser.forward();  // 前进到: https://www.github.com
-        
-        browser.visit("https://www.baidu.com");  // 访问新页面，后面的记录被清除
-        
-        browser.printHistory();
-        // 历史记录:
-        //    https://www.google.com
-        //    https://www.github.com
-        // -> https://www.baidu.com
-    }
+// 生产者
+queue.put(task);     // 队列满时阻塞
+
+// 消费者
+Task task = queue.take();  // 队列空时阻塞
+```
+
+`TaskQueue.java` 中手动实现了基于 `synchronized` + `wait/notifyAll` 的阻塞队列，这是理解并发原语的好案例，但生产代码中直接用 `LinkedBlockingQueue`。
+
+**场景二：需要线程安全 List 语义（用 CopyOnWriteArrayList 或 synchronizedList）**
+
+```java
+// 读多写少：CopyOnWriteArrayList（每次写都复制数组，读无锁）
+List<String> list = new CopyOnWriteArrayList<>();
+
+// 读写均衡：Collections.synchronizedList（每个方法加 synchronized）
+List<String> list = Collections.synchronizedList(new LinkedList<>());
+// 注意：遍历时需要手动 synchronized！
+synchronized (list) {
+    for (String s : list) { ... }
 }
 ```
 
 ---
 
-### 3.3 实现任务队列
+## 5.5 常见错误与修复
 
-**需求**：实现一个支持优先级的任务队列。
-
-**实现**：
+### 错误一：在 LinkedList 上用 for + get（O(n²)）
 
 ```java
-public class TaskQueue {
-    private final LinkedList<Task> queue;
-    
-    static class Task {
-        String name;
-        int priority;  // 优先级：1-高，2-中，3-低
-        
-        Task(String name, int priority) {
-            this.name = name;
-            this.priority = priority;
-        }
-        
-        @Override
-        public String toString() {
-            return name + "(优先级:" + priority + ")";
-        }
-    }
-    
-    public TaskQueue() {
-        this.queue = new LinkedList<>();
-    }
-    
-    // 添加任务
-    public void addTask(Task task) {
-        if (task.priority == 1) {
-            // 高优先级任务插入到队首
-            queue.addFirst(task);
-        } else {
-            // 普通任务插入到队尾
-            queue.addLast(task);
-        }
-        System.out.println("添加任务: " + task);
-    }
-    
-    // 获取下一个任务
-    public Task nextTask() {
-        Task task = queue.pollFirst();
-        if (task != null) {
-            System.out.println("执行任务: " + task);
-        }
-        return task;
-    }
-    
-    // 取消最后一个任务
-    public Task cancelLastTask() {
-        Task task = queue.pollLast();
-        if (task != null) {
-            System.out.println("取消任务: " + task);
-        }
-        return task;
-    }
-    
-    // 获取任务数量
-    public int size() {
-        return queue.size();
-    }
-    
-    // 打印所有任务
-    public void printTasks() {
-        System.out.println("当前任务队列:");
-        for (Task task : queue) {
-            System.out.println("  " + task);
-        }
-    }
-}
-
-// 使用示例
-public class TaskQueueDemo {
-    public static void main(String[] args) {
-        TaskQueue taskQueue = new TaskQueue();
-        
-        taskQueue.addTask(new TaskQueue.Task("任务1", 2));
-        taskQueue.addTask(new TaskQueue.Task("任务2", 3));
-        taskQueue.addTask(new TaskQueue.Task("紧急任务", 1));
-        taskQueue.addTask(new TaskQueue.Task("任务3", 2));
-        
-        taskQueue.printTasks();
-        // 当前任务队列:
-        //   紧急任务(优先级:1)
-        //   任务1(优先级:2)
-        //   任务2(优先级:3)
-        //   任务3(优先级:2)
-        
-        taskQueue.nextTask();  // 执行任务: 紧急任务(优先级:1)
-        taskQueue.nextTask();  // 执行任务: 任务1(优先级:2)
-        
-        taskQueue.cancelLastTask();  // 取消任务: 任务3(优先级:2)
-        
-        taskQueue.printTasks();
-        // 当前任务队列:
-        //   任务2(优先级:3)
-    }
-}
-```
-
----
-
-### 3.4 实现撤销/重做功能
-
-**需求**：实现文本编辑器的撤销/重做功能。
-
-**实现**：
-
-```java
-public class TextEditor {
-    private final LinkedList<String> history;  // 历史记录
-    private int currentIndex;  // 当前位置
-    
-    public TextEditor() {
-        this.history = new LinkedList<>();
-        this.currentIndex = -1;
-        // 初始状态
-        addState("");
-    }
-    
-    // 添加新状态
-    private void addState(String text) {
-        // 删除当前位置之后的所有记录
-        while (history.size() > currentIndex + 1) {
-            history.removeLast();
-        }
-        
-        history.addLast(text);
-        currentIndex++;
-    }
-    
-    // 输入文本
-    public void type(String text) {
-        String current = history.get(currentIndex);
-        String newText = current + text;
-        addState(newText);
-        System.out.println("输入: " + text + " -> " + newText);
-    }
-    
-    // 删除文本
-    public void delete(int count) {
-        String current = history.get(currentIndex);
-        if (current.length() >= count) {
-            String newText = current.substring(0, current.length() - count);
-            addState(newText);
-            System.out.println("删除 " + count + " 个字符 -> " + newText);
-        }
-    }
-    
-    // 撤销
-    public void undo() {
-        if (currentIndex > 0) {
-            currentIndex--;
-            System.out.println("撤销 -> " + history.get(currentIndex));
-        } else {
-            System.out.println("无法撤销");
-        }
-    }
-    
-    // 重做
-    public void redo() {
-        if (currentIndex < history.size() - 1) {
-            currentIndex++;
-            System.out.println("重做 -> " + history.get(currentIndex));
-        } else {
-            System.out.println("无法重做");
-        }
-    }
-    
-    // 获取当前文本
-    public String getText() {
-        return history.get(currentIndex);
-    }
-}
-
-// 使用示例
-public class TextEditorDemo {
-    public static void main(String[] args) {
-        TextEditor editor = new TextEditor();
-        
-        editor.type("Hello");     // 输入: Hello -> Hello
-        editor.type(" World");    // 输入:  World -> Hello World
-        editor.delete(5);         // 删除 5 个字符 -> Hello 
-        editor.type("!");         // 输入: ! -> Hello!
-        
-        editor.undo();            // 撤销 -> Hello 
-        editor.undo();            // 撤销 -> Hello World
-        editor.undo();            // 撤销 -> Hello
-        
-        editor.redo();            // 重做 -> Hello World
-        editor.redo();            // 重做 -> Hello 
-        
-        editor.type(" Java");     // 输入:  Java -> Hello  Java
-        
-        System.out.println("最终文本: " + editor.getText());
-        // 最终文本: Hello  Java
-    }
-}
-```
-
----
-
-## 4. 性能优化技巧
-
-### 4.1 使用迭代器遍历
-
-```java
-// ❌ 错误：O(n²)
+// ❌ 错误
 for (int i = 0; i < list.size(); i++) {
-    String item = list.get(i);
+    String s = list.get(i);  // 每次 O(n)，总计 O(n²)
+    process(s);
 }
 
-// ✅ 正确：O(n)
-for (String item : list) {
-    // 处理item
+// ✅ 修复
+for (String s : list) {  // foreach → iterator，O(n)
+    process(s);
+}
+```
+
+### 错误二：以为"链表中间插入一定快"
+
+```java
+// ❌ 错误认知
+// linkedList.add(index, element) 是 O(1)？
+// 实际：node(index) 是 O(n)，链接才是 O(1)
+
+// ✅ 只有在已持有迭代器时才是 O(1)
+ListIterator<E> it = list.listIterator();
+while (it.hasNext()) {
+    if (condition(it.next())) {
+        it.add(element);  // 这才是真 O(1)
+    }
+}
+```
+
+### 错误三：声明为 LinkedList 而非接口类型
+
+```java
+// ❌ 过度暴露
+LinkedList<String> list = new LinkedList<>();
+list.get(100);  // O(n) 的危险调用，编译器不警告
+
+// ✅ 限制到最小接口
+Queue<String> queue = new LinkedList<>();  // 无法调用 get(index)
+Deque<String> deque = new LinkedList<>();  // 无法调用 get(index)
+```
+
+声明为接口类型，编译器会阻止误用 O(n) 的随机访问方法。
+
+### 错误四：removeIf 的错误使用（反面对比）
+
+```java
+// ❌ 遍历中直接 remove（ConcurrentModificationException）
+for (String s : list) {
+    if (s.isEmpty()) list.remove(s);
+}
+
+// ✅ 使用 removeIf（JDK 8+，迭代器安全删除）
+list.removeIf(String::isEmpty);
+
+// ✅ 或者 Iterator 手动删除
+Iterator<String> it = list.iterator();
+while (it.hasNext()) {
+    if (it.next().isEmpty()) it.remove();
 }
 ```
 
 ---
 
-### 4.2 批量操作使用addAll
+## 5.6 LinkedList vs ArrayDeque：纯队列/栈场景的选择
 
-```java
-// ❌ 不好：多次方法调用
-for (String item : collection) {
-    list.add(item);
-}
+当只需要队列或栈功能（不需要 List 接口）时，`ArrayDeque` 通常是更好的选择：
 
-// ✅ 好：批量添加
-list.addAll(collection);
-```
+| 维度 | LinkedList | ArrayDeque |
+|------|-----------|------------|
+| 底层结构 | 链表节点 | 循环数组 |
+| 头尾操作 | O(1) | O(1) |
+| 内存效率 | 每节点 32 字节额外开销 | 连续数组，无额外开销 |
+| CPU 缓存 | 不友好（分散节点） | 友好（连续内存） |
+| null 元素 | ✅ 允许 | ❌ 不允许（NPE）|
+| List 接口 | ✅ 实现 | ❌ 未实现 |
 
----
-
-### 4.3 使用合适的方法
-
-```java
-// ❌ 不好：使用索引方法
-list.add(0, element);  // 需要遍历
-list.remove(0);        // 需要遍历
-
-// ✅ 好：使用头尾方法
-list.addFirst(element);  // O(1)
-list.removeFirst();      // O(1)
-```
+**结论**：纯队列/栈场景用 `ArrayDeque`；需要同时使用 List 接口或需要 null 元素时用 `LinkedList`。
 
 ---
 
-### 4.4 考虑使用ArrayDeque
+## 5.7 本章总结
 
-**场景**：实现队列或栈
+- **遍历铁律**：只用迭代器/foreach，禁止 for + get，否则 O(n²)
+- **API 选择**：用 `offer/poll/peek` 系列，不用 `add/remove/element`（会抛异常）
+- **中间插入 O(1) 的前提**：必须持有 `ListIterator`，否则仍然是 O(n)
+- **线程安全**：生产代码用 `LinkedBlockingQueue`（队列）或 `CopyOnWriteArrayList`（列表）
+- **类型声明**：声明为 `Queue`/`Deque` 接口，不要直接声明 `LinkedList`
+- **纯队列/栈**：优先考虑 `ArrayDeque`，比 LinkedList 内存更紧凑、缓存更友好
 
-```java
-// LinkedList
-Deque<String> deque1 = new LinkedList<>();
+> **本章对应演示代码**：`LinkedListAsQueueDemo.java`（队列操作最佳实践）、`BrowserHistoryManager.java`（实战场景）、`TaskQueue.java`（阻塞队列实现原理）
 
-// ArrayDeque（通常性能更好）
-Deque<String> deque2 = new ArrayDeque<>();
-```
-
-**ArrayDeque的优势**：
-- 内存连续，缓存友好
-- 不需要存储prev和next指针
-- 大多数操作性能更好
-
-**性能对比**：
-
-| 操作 | LinkedList | ArrayDeque |
-|------|-----------|-----------|
-| **addFirst** | 快 | 更快 |
-| **addLast** | 快 | 更快 |
-| **removeFirst** | 快 | 更快 |
-| **removeLast** | 快 | 更快 |
-| **内存占用** | 大 | 小 |
-
-**建议**：
-- 实现队列或栈：优先使用ArrayDeque
-- 需要List接口：使用LinkedList
-
----
-
-## 5. 最佳实践清单
-
-### 5.1 使用LinkedList
-
-- ✅ 使用迭代器遍历，不要用for循环+get
-- ✅ 使用合适的接口（List、Queue、Deque）
-- ✅ 使用头尾操作方法（addFirst、addLast等）
-- ✅ 批量操作使用addAll
-- ✅ 在迭代时修改使用迭代器的remove方法
-
----
-
-### 5.2 不要使用LinkedList
-
-- ❌ 不要频繁随机访问
-- ❌ 不要在中间位置频繁插入删除
-- ❌ 不要用for循环+get遍历
-- ❌ 不要在内存敏感的场景使用
-
----
-
-### 5.3 选择合适的实现
-
-```java
-// 需要List接口 + 随机访问
-List<String> list = new ArrayList<>();
-
-// 需要List接口 + 头部操作
-List<String> list = new LinkedList<>();
-
-// 需要Queue接口
-Queue<String> queue = new LinkedList<>();
-// 或者
-Queue<String> queue = new ArrayDeque<>();  // 通常更好
-
-// 需要Deque接口
-Deque<String> deque = new ArrayDeque<>();  // 推荐
-// 或者
-Deque<String> deque = new LinkedList<>();
-```
-
----
-
-## 6. 总结
-
-### 6.1 核心要点
-
-1. **正确遍历**：使用迭代器，不要用for循环+get
-2. **合适场景**：队列、栈、双端队列、头部操作
-3. **避免陷阱**：随机访问、中间操作、内存敏感
-4. **性能优化**：使用头尾方法、批量操作、考虑ArrayDeque
-
----
-
-### 6.2 使用建议
-
-**适合使用LinkedList**：
-- ✅ 实现队列（Queue）
-- ✅ 实现栈（Stack）
-- ✅ 实现双端队列（Deque）
-- ✅ 频繁在头部插入删除
-
-**不适合使用LinkedList**：
-- ❌ 频繁随机访问
-- ❌ 频繁在中间位置操作
-- ❌ 内存敏感
-- ❌ 需要高性能遍历
-
-**默认选择**：
-- List接口：ArrayList
-- Queue接口：ArrayDeque
-- Deque接口：ArrayDeque
-- 特殊需求：LinkedList
-
----
-
-### 6.3 继续学习
-
-完成LinkedList的学习后，建议继续学习：
-
-1. **LinkedHashMap**：结合HashMap和LinkedList的优点
-2. **ArrayDeque**：基于数组的双端队列，性能更好
-3. **ConcurrentLinkedQueue**：并发队列
-4. **PriorityQueue**：优先级队列
-
----
-
-**恭喜你完成了LinkedList的深度学习！🎉**
-
-**下一步**：学习LinkedHashMap，了解如何保持插入顺序和实现LRU缓存。
+**返回目录**：[README.md](../../README.md)

@@ -1,181 +1,207 @@
-# 05 AOP与实际应用
+# 第五章：AOP 与实际应用
 
-## AOP核心概念
+## 5.1 AOP 的本质就是动态代理
 
-### 基本术语
-- **切面（Aspect）**：横切关注点的模块化
-- **连接点（Join Point）**：程序执行的特定点
-- **切点（Pointcut）**：连接点的集合
-- **通知（Advice）**：切面在特定连接点执行的代码
-- **织入（Weaving）**：将切面应用到目标对象的过程
+AOP（面向切面编程）不是新技术，它的底层就是动态代理。`AopFramework.java` 展示了一个迷你 AOP 框架的实现：
 
-### 通知类型
-1. **前置通知（Before）**：方法执行前
-2. **后置通知（After）**：方法执行后
-3. **返回通知（AfterReturning）**：方法正常返回后
-4. **异常通知（AfterThrowing）**：方法抛出异常后
-5. **环绕通知（Around）**：包围方法执行
-
-## 动态代理实现AOP
-
-### 简单AOP框架
-参考 `AopFramework.java`：
 ```java
-UserService proxy = AopFramework.createProxy(target,
-    new LoggingAspect(),
-    new PerformanceAspect()
-);
-```
+// AopFramework.java 的核心结构
+public class AopFramework {
 
-### 切面实现
-```java
-public class LoggingAspect implements Aspect {
-    @Override
-    public void before(Method method, Object[] args) {
-        System.out.println("[LOG] 开始执行: " + method.getName());
+    // 切面接口
+    interface Aspect {
+        void before(Method method, Object[] args);
+        void after(Method method, Object[] args, Object result);
+        void onError(Method method, Object[] args, Throwable e);
     }
-}
-```
 
-## 实际应用场景
-
-### 1. 日志记录
-```java
-public class AuditAspect implements Aspect {
-    @Override
-    public void before(Method method, Object[] args) {
-        String user = getCurrentUser();
-        String operation = method.getName();
-        auditLog.record(user, operation, args);
-    }
-}
-```
-
-### 2. 性能监控
-```java
-public class PerformanceMonitorAspect implements Aspect {
-    private ThreadLocal<Long> startTime = new ThreadLocal<>();
-    
-    @Override
-    public void before(Method method, Object[] args) {
-        startTime.set(System.currentTimeMillis());
-    }
-    
-    @Override
-    public void afterFinally(Method method, Object[] args, Object result, Throwable exception) {
-        long duration = System.currentTimeMillis() - startTime.get();
-        if (duration > 1000) { // 超过1秒记录
-            performanceLogger.warn("Slow method: {} took {}ms", method.getName(), duration);
-        }
-        startTime.remove();
-    }
-}
-```
-
-### 3. 缓存管理
-```java
-public class CacheAspect implements Aspect {
-    private final Cache cache = new ConcurrentHashMap<>();
-    
-    @Override
-    public Object around(Method method, Object[] args) throws Throwable {
-        if (method.getName().startsWith("get")) {
-            String key = generateKey(method, args);
-            Object cached = cache.get(key);
-            if (cached != null) {
-                return cached;
+    // 创建代理（统一入口）
+    public static <T> T createProxy(T target, List<Aspect> aspects) {
+        return (T) Proxy.newProxyInstance(
+            target.getClass().getClassLoader(),
+            target.getClass().getInterfaces(),
+            (proxy, method, args) -> {
+                // 执行所有切面的 before
+                aspects.forEach(a -> a.before(method, args));
+                try {
+                    Object result = method.invoke(target, args);
+                    // 执行所有切面的 after
+                    aspects.forEach(a -> a.after(method, args, result));
+                    return result;
+                } catch (InvocationTargetException e) {
+                    Throwable cause = e.getCause();
+                    // 执行所有切面的 onError
+                    aspects.forEach(a -> a.onError(method, args, cause));
+                    throw cause;
+                }
             }
-            
-            Object result = method.invoke(target, args);
-            cache.put(key, result);
-            return result;
-        }
-        
-        return method.invoke(target, args);
+        );
     }
 }
 ```
 
-### 4. 事务管理
+---
+
+## 5.2 四种 AOP 通知类型
+
+对应 Spring AOP 的 `@Before`、`@After`、`@AfterReturning`、`@AfterThrowing`、`@Around`：
+
 ```java
-public class TransactionAspect implements Aspect {
+// 所有类型的通知在 InvocationHandler.invoke() 中对应位置：
+
+public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+    // @Before：方法执行前
+    beforeAdvice(method, args);
+
+    Object result;
+    try {
+        result = method.invoke(target, args);
+
+        // @AfterReturning：方法正常返回后（不含异常）
+        afterReturningAdvice(method, args, result);
+
+    } catch (InvocationTargetException e) {
+        Throwable cause = e.getCause();
+
+        // @AfterThrowing：方法抛出异常后
+        afterThrowingAdvice(method, args, cause);
+        throw cause;
+
+    } finally {
+        // @After（Finally）：无论成功还是异常都执行
+        afterAdvice(method, args);
+    }
+
+    // @Around 包含了以上所有，通过 ProceedingJoinPoint.proceed() 控制是否执行目标方法
+    return result;
+}
+```
+
+---
+
+## 5.3 实战场景一：统一异常处理代理
+
+```java
+// 基于 AopFramework.java 的实战扩展
+Aspect exceptionAspect = new Aspect() {
     @Override
-    public Object around(Method method, Object[] args) throws Throwable {
-        if (method.isAnnotationPresent(Transactional.class)) {
-            TransactionManager tm = getTransactionManager();
-            tm.begin();
-            try {
-                Object result = method.invoke(target, args);
-                tm.commit();
-                return result;
-            } catch (Exception e) {
-                tm.rollback();
-                throw e;
-            }
+    public void before(Method method, Object[] args) {}
+
+    @Override
+    public void after(Method method, Object[] args, Object result) {}
+
+    @Override
+    public void onError(Method method, Object[] args, Throwable e) {
+        if (e instanceof SQLException) {
+            log.error("数据库异常，方法: {}, 参数: {}", method.getName(),
+                Arrays.toString(args), e);
+            throw new DataAccessException("数据库操作失败，请稍后重试", e);
         }
-        
-        return method.invoke(target, args);
+        if (e instanceof NetworkException) {
+            // 重试逻辑
+            retryService.schedule(method.getName());
+        }
     }
-}
+};
+
+UserService proxy = AopFramework.createProxy(userService, List.of(exceptionAspect));
 ```
 
-### 5. 权限控制
+---
+
+## 5.4 实战场景二：方法级权限控制
+
 ```java
-public class SecurityAspect implements Aspect {
+// 结合注解 + 代理实现声明式权限控制
+Aspect securityAspect = new Aspect() {
     @Override
     public void before(Method method, Object[] args) {
-        RequiresRole roleAnnotation = method.getAnnotation(RequiresRole.class);
-        if (roleAnnotation != null) {
-            String requiredRole = roleAnnotation.value();
-            if (!currentUser.hasRole(requiredRole)) {
-                throw new SecurityException("Access denied");
+        RequiresRole annotation = method.getAnnotation(RequiresRole.class);
+        if (annotation != null) {
+            String requiredRole = annotation.value();
+            String currentRole = SecurityContext.getCurrentUserRole();
+            if (!currentRole.equals(requiredRole)) {
+                throw new AccessDeniedException(
+                    "需要 " + requiredRole + " 角色，当前角色：" + currentRole);
             }
         }
     }
-}
+    // ...
+};
+
+// 在 UserService 的方法上标注权限要求
+@RequiresRole("ADMIN")
+public void deleteUser(Long id) { ... }
 ```
 
-## 框架中的应用
+---
 
-### Spring AOP
-- 基于代理的AOP实现
-- 支持JDK代理和CGLIB代理
-- 提供声明式事务管理
+## 5.5 代理的自调用问题
 
-### AspectJ
-- 编译时织入
-- 更强大的切点表达式
-- 支持字段访问拦截
+AOP 最常见的 Bug：**同一个类内部方法调用不会触发代理**。
 
-## 最佳实践
-
-### 1. 切面设计原则
-- 单一职责：每个切面只关注一个横切关注点
-- 最小侵入：尽量减少对业务代码的影响
-- 性能考虑：避免在切面中执行耗时操作
-
-### 2. 切点选择
-- 精确匹配：避免过度拦截
-- 性能优化：优先使用方法名匹配
-- 灵活配置：支持运行时配置
-
-### 3. 异常处理
 ```java
-public class ExceptionHandlingAspect implements Aspect {
-    @Override
-    public void afterThrowing(Method method, Object[] args, Throwable exception) {
-        // 记录异常
-        logger.error("Method {} threw exception", method.getName(), exception);
-        
-        // 发送告警
-        if (exception instanceof CriticalException) {
-            alertService.sendAlert(exception);
-        }
+// ❌ 自调用问题
+@Service
+public class OrderService {
+
+    @Transactional
+    public void createOrder(Order order) {
+        // 业务逻辑...
+        sendNotification(order);  // ← 自调用！不经过代理，@Async 失效！
+    }
+
+    @Async  // 希望异步执行
+    public void sendNotification(Order order) {
+        // 发送通知
     }
 }
 ```
 
-## 示例代码位置
-- `AopFramework.java`：简单AOP框架实现
-- `JdkProxyDemo.java`：包含多种切面示例
-- `ProxyDemoMain.java`：AOP框架使用演示
+**原因**：Spring 注入的是代理对象，外部调用 `orderService.createOrder()` 经过代理。但在 `createOrder()` 内部调用 `sendNotification()` 时，`this` 是目标对象本身，不是代理，所以 `@Async` 失效。
+
+```java
+// ✅ 解决方案1：注入自身（Spring 会注入代理）
+@Service
+public class OrderService {
+    @Autowired
+    private OrderService self;  // 注入的是代理
+
+    public void createOrder(Order order) {
+        self.sendNotification(order);  // 经过代理，@Async 生效
+    }
+
+    @Async
+    public void sendNotification(Order order) { ... }
+}
+
+// ✅ 解决方案2：拆分到不同的类（推荐）
+@Service
+public class NotificationService {
+    @Async
+    public void sendNotification(Order order) { ... }
+}
+
+@Service
+public class OrderService {
+    @Autowired
+    private NotificationService notificationService;
+
+    public void createOrder(Order order) {
+        notificationService.sendNotification(order);  // 跨类调用，经过代理
+    }
+}
+```
+
+---
+
+## 5.6 本章总结
+
+- **AOP 本质**：动态代理 + 切面逻辑，没有魔法，就是 `method.invoke()` 的前后插入代码
+- **四种通知**：Before（调用前）、AfterReturning（正常返回后）、AfterThrowing（异常后）、After/Finally（总是执行）
+- **Around**：最强大，通过 `proceed()` 控制是否执行目标方法，可以修改参数和返回值
+- **自调用问题**：同类内部调用不经过代理，`this.method()` 的 `this` 是目标对象而非代理
+
+> **本章对应演示代码**：`AopFramework.java`（迷你 AOP 框架实现）、`SpringAopProxyDemo.java`（Spring AOP 场景演示）
+
+**继续阅读**：[06-Spring AOP代理选择机制.md](./06-Spring AOP代理选择机制.md)
