@@ -1,0 +1,108 @@
+name: build-folder-diff-exe
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-windows-exe:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      - name: Build fat jar
+        shell: pwsh
+        run: mvn -pl java-excel -DskipTests package
+
+      - name: Build app-image via jpackage
+        shell: pwsh
+        run: |
+          $jarPath = "java-excel/target/folder-diff-tool.jar"
+          if (!(Test-Path $jarPath)) {
+            throw "Fat jar not found: $jarPath"
+          }
+
+          New-Item -ItemType Directory -Path "dist/input" -Force | Out-Null
+
+          jpackage --type app-image `
+            --name FolderDiffTool `
+            --input java-excel/target `
+            --main-jar folder-diff-tool.jar `
+            --main-class com.fragment.excel.FolderDiffMain `
+            --dest dist
+
+      - name: Add helper scripts and readme
+        shell: pwsh
+        run: |
+          $appDir = "dist/FolderDiffTool"
+          $exeName = "FolderDiffTool.exe"
+
+          @'
+          @echo off
+          setlocal
+          chcp 65001 >nul
+          echo Excel 文件夹比对
+          set /p LEFT=请输入左侧目录: 
+          set /p RIGHT=请输入右侧目录: 
+          set /p OUTPUT=请输入结果txt路径(默认 excel-result.txt): 
+          if "%OUTPUT%"=="" set OUTPUT=excel-result.txt
+          "%~dp0FolderDiffTool.exe" excel "%LEFT%" "%RIGHT%" --output="%OUTPUT%"
+          echo.
+          echo 已完成，按任意键退出...
+          pause >nul
+          endlocal
+          '@ | Set-Content -Path "$appDir/run-excel.bat" -Encoding utf8
+
+          @'
+          @echo off
+          setlocal
+          chcp 65001 >nul
+          echo Word 文件夹比对
+          set /p LEFT=请输入左侧目录: 
+          set /p RIGHT=请输入右侧目录: 
+          set /p OUTPUT=请输入结果txt路径(默认 word-result.txt): 
+          if "%OUTPUT%"=="" set OUTPUT=word-result.txt
+          "%~dp0FolderDiffTool.exe" word "%LEFT%" "%RIGHT%" --output="%OUTPUT%"
+          echo.
+          echo 已完成，按任意键退出...
+          pause >nul
+          endlocal
+          '@ | Set-Content -Path "$appDir/run-word.bat" -Encoding utf8
+
+          @'
+          FolderDiffTool 使用说明
+
+          1) 双击 run-excel.bat 或 run-word.bat
+          2) 按提示输入左右目录和结果文件路径
+          3) 程序会生成 txt 报告
+
+          命令行示例
+          - Excel:
+            FolderDiffTool.exe excel D:\data\left D:\data\right --output=excel-result.txt --max-errors-per-file=200 --max-errors-per-sheet=50
+          - Word:
+            FolderDiffTool.exe word D:\data\left D:\data\right --output=word-result.txt --max-errors-per-file=200 --max-errors-per-sheet=50
+
+          参数说明
+          - --output=...                 结果txt路径
+          - --max-errors-per-file=...    每个文件最多输出差异条数
+          - --max-errors-per-sheet=...   每个sheet/分组最多输出差异条数
+          '@ | Set-Content -Path "$appDir/README.txt" -Encoding utf8
+
+      - name: Archive package
+        shell: pwsh
+        run: |
+          Compress-Archive -Path dist/FolderDiffTool/* -DestinationPath dist/FolderDiffTool-windows.zip -Force
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: FolderDiffTool-windows
+          path: dist/FolderDiffTool-windows.zip
