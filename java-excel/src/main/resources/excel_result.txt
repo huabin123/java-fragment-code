@@ -1,0 +1,20 @@
+================ Excel 比对结果 ================
+左侧目录: /Users/huabin/workspace/playground/my-github/java-fragment-code/java-excel/src/main/resources/excel_diff/left
+右侧目录: /Users/huabin/workspace/playground/my-github/java-fragment-code/java-excel/src/main/resources/excel_diff/right
+
+文件: 测试假数据.xlsx
+  总差异数: 2
+    - sheet=分投资者类型 row=4 col=8 | left=[普通渠道1] right=[普通渠道]
+    - sheet=净销售金额逐日明细 row=5 col=7 | left=[1] right=[]
+
+文件: 测试假数据_副本.xlsx
+  总差异数: 2
+    - sheet=分投资者类型 row=4 col=8 | left=[普通渠道1] right=[普通渠道]
+    - sheet=净销售金额逐日明细 row=5 col=7 | left=[1] right=[]
+
+================ 统计 ================
+匹配文件数: 2
+仅左文件数: 0
+仅右文件数: 0
+总差异单元格数(原始): 4
+总差异单元格数(输出): 4

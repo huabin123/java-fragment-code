@@ -49,14 +49,14 @@ jobs:
           @echo off
           setlocal
           chcp 65001 >nul
-          echo Excel 文件夹比对
-          set /p LEFT=请输入左侧目录: 
-          set /p RIGHT=请输入右侧目录: 
-          set /p OUTPUT=请输入结果txt路径(默认 excel-result.txt): 
+          echo Excel Folder Comparison
+          set /p LEFT=Enter left directory: 
+          set /p RIGHT=Enter right directory: 
+          set /p OUTPUT=Enter output txt path (default excel-result.txt): 
           if "%OUTPUT%"=="" set OUTPUT=excel-result.txt
           "%~dp0FolderDiffTool.exe" excel "%LEFT%" "%RIGHT%" --output="%OUTPUT%"
           echo.
-          echo 已完成，按任意键退出...
+          echo Completed, press any key to exit...
           pause >nul
           endlocal
           '@ | Set-Content -Path "$appDir/run-excel.bat" -Encoding utf8
@@ -65,35 +65,35 @@ jobs:
           @echo off
           setlocal
           chcp 65001 >nul
-          echo Word 文件夹比对
-          set /p LEFT=请输入左侧目录: 
-          set /p RIGHT=请输入右侧目录: 
-          set /p OUTPUT=请输入结果txt路径(默认 word-result.txt): 
+          echo Word Folder Comparison
+          set /p LEFT=Enter left directory: 
+          set /p RIGHT=Enter right directory: 
+          set /p OUTPUT=Enter output txt path (default word-result.txt): 
           if "%OUTPUT%"=="" set OUTPUT=word-result.txt
           "%~dp0FolderDiffTool.exe" word "%LEFT%" "%RIGHT%" --output="%OUTPUT%"
           echo.
-          echo 已完成，按任意键退出...
+          echo Completed, press any key to exit...
           pause >nul
           endlocal
           '@ | Set-Content -Path "$appDir/run-word.bat" -Encoding utf8
 
           @'
-          FolderDiffTool 使用说明
+          FolderDiffTool Usage Instructions
 
-          1) 双击 run-excel.bat 或 run-word.bat
-          2) 按提示输入左右目录和结果文件路径
-          3) 程序会生成 txt 报告
+          1) Double-click run-excel.bat or run-word.bat
+          2) Follow prompts to enter left and right directories and output file path
+          3) The program will generate a txt report
 
-          命令行示例
+          Command Line Examples
           - Excel:
             FolderDiffTool.exe excel D:\data\left D:\data\right --output=excel-result.txt --max-errors-per-file=200 --max-errors-per-sheet=50
           - Word:
             FolderDiffTool.exe word D:\data\left D:\data\right --output=word-result.txt --max-errors-per-file=200 --max-errors-per-sheet=50
 
-          参数说明
-          - --output=...                 结果txt路径
-          - --max-errors-per-file=...    每个文件最多输出差异条数
-          - --max-errors-per-sheet=...   每个sheet/分组最多输出差异条数
+          Parameters
+          - --output=...                 Path for result txt file
+          - --max-errors-per-file=...    Maximum differences to output per file
+          - --max-errors-per-sheet=...   Maximum differences to output per sheet/group
           '@ | Set-Content -Path "$appDir/README.txt" -Encoding utf8
 
       - name: Archive package

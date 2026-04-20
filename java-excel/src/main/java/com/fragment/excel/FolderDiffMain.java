@@ -54,9 +54,9 @@ public class FolderDiffMain {
                 }
             }
 
-            System.out.println("比对完成，结果文件: " + outputPath.toAbsolutePath());
+            System.out.println("Comparison completed, result file: " + outputPath.toAbsolutePath());
         } catch (IOException e) {
-            throw new RuntimeException("写入结果文件失败: " + e.getMessage(), e);
+            throw new RuntimeException("Failed to write result file: " + e.getMessage(), e);
         }
     }
 
@@ -72,7 +72,7 @@ public class FolderDiffMain {
 
     private static String[] toModeArgs(String mode, String[] args, String defaultOutputFile) {
         if (args == null || args.length < 2) {
-            throw new IllegalArgumentException("旧入口调用也需要传参：<leftDir> <rightDir>");
+            throw new IllegalArgumentException("Old entry point also requires arguments: <leftDir> <rightDir>");
         }
 
         if (args.length == 2) {
@@ -98,7 +98,7 @@ public class FolderDiffMain {
         Path leftFolder = Paths.get(args[1]);
         Path rightFolder = Paths.get(args[2]);
         if (!Files.isDirectory(leftFolder) || !Files.isDirectory(rightFolder)) {
-            throw new IllegalArgumentException("左右目录必须存在且为目录。left=" + leftFolder + ", right=" + rightFolder);
+            throw new IllegalArgumentException("Both left and right directories must exist and be directories. left=" + leftFolder + ", right=" + rightFolder);
         }
 
         Path outputPath = Paths.get(DEFAULT_OUTPUT_FILE);
@@ -122,7 +122,7 @@ public class FolderDiffMain {
                 maxErrorsPerSheet = parsePositiveInt(arg, "--max-errors-per-sheet=");
                 continue;
             }
-            throw new IllegalArgumentException("未知参数: " + arg);
+            throw new IllegalArgumentException("Unknown parameter: " + arg);
         }
 
         return new CliOptions(mode, leftFolder, rightFolder, outputPath, maxErrorsPerFile, maxErrorsPerSheet);
@@ -132,17 +132,17 @@ public class FolderDiffMain {
         try {
             int value = Integer.parseInt(arg.substring(prefix.length()));
             if (value <= 0) {
-                throw new IllegalArgumentException("参数必须是正整数: " + arg);
+                throw new IllegalArgumentException("Parameter must be a positive integer: " + arg);
             }
             return value;
         } catch (NumberFormatException e) {
-            throw new IllegalArgumentException("参数不是合法整数: " + arg);
+            throw new IllegalArgumentException("Parameter is not a valid integer: " + arg);
         }
     }
 
     private static IllegalArgumentException usageException() {
-        String usage = "用法: java -jar app.jar <excel|word> <leftDir> <rightDir> " +
-                "[--output=结果txt] [--max-errors-per-file=N] [--max-errors-per-sheet=N]";
+        String usage = "Usage: java -jar app.jar <excel|word> <leftDir> <rightDir> " +
+                "[--output=result_txt] [--max-errors-per-file=N] [--max-errors-per-sheet=N]";
         return new IllegalArgumentException(usage);
     }
 

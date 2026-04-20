@@ -1,7 +1,9 @@
 package com.fragment.excel.util;
 
 import java.io.IOException;
+import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
+import java.nio.charset.StandardCharsets;
 import org.apache.poi.ss.usermodel.*;
 
 import java.nio.file.*;
@@ -10,13 +12,13 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
- * Excel 文件夹比对工具。
+ * Excel Folder Comparison Tool.
  *
- * <p>功能：
- * 1. 读取 resources 下两个目录中的 Excel 文件
- * 2. 先按文件名匹配
- * 3. 对匹配上的文件按 sheet 名进行对比
- * 4. 输出差异明细（sheet、行、列、左右值）
+ * <p>Functions:
+ * 1. Read Excel files from two directories under resources
+ * 2. Match files by name
+ * 3. Compare matched files by sheet name
+ * 4. Output difference details (sheet, row, column, left and right values)
  */
 public class ExcelFolderDiffTool {
 
@@ -26,10 +28,10 @@ public class ExcelFolderDiffTool {
 
     public DiffSummary compareFolders(Path leftFolder, Path rightFolder) {
         if (!Files.isDirectory(leftFolder)) {
-            throw new IllegalArgumentException("左侧目录不存在或不是目录: " + leftFolder);
+            throw new IllegalArgumentException("Left directory does not exist or is not a directory: " + leftFolder);
         }
         if (!Files.isDirectory(rightFolder)) {
-            throw new IllegalArgumentException("右侧目录不存在或不是目录: " + rightFolder);
+            throw new IllegalArgumentException("Right directory does not exist or is not a directory: " + rightFolder);
         }
 
         Map<String, Path> leftFiles = listExcelFiles(leftFolder);
@@ -70,7 +72,7 @@ public class ExcelFolderDiffTool {
                             TreeMap::new
                     ));
         } catch (IOException e) {
-            throw new RuntimeException("读取目录失败: " + folder, e);
+            throw new RuntimeException("Failed to read directory: " + folder, e);
         }
     }
 
@@ -109,7 +111,7 @@ public class ExcelFolderDiffTool {
             }
 
         } catch (IOException e) {
-            result.errorMessage = "文件比对失败: " + e.getMessage();
+            result.errorMessage = "File comparison failed: " + e.getMessage();
         }
 
         return result;
@@ -125,7 +127,7 @@ public class ExcelFolderDiffTool {
     }
 
     /**
-     * 按左侧工作簿的 sheet 顺序进行比对（满足“依次按 sheet 名比对”）。
+     * Compare sheets in the order of the left workbook (to meet the requirement of comparing by sheet name sequentially).
      */
     private List<String> getOrderedMatchedSheetNames(Workbook leftWorkbook, Map<String, Sheet> rightSheets) {
         List<String> names = new ArrayList<>();
@@ -175,19 +177,19 @@ public class ExcelFolderDiffTool {
     }
 
     public void printSummary(DiffSummary summary) {
-        PrintWriter printWriter = new PrintWriter(System.out, true);
+        PrintWriter printWriter = new PrintWriter(new OutputStreamWriter(System.out, StandardCharsets.UTF_8), true);
         printSummary(summary, printWriter, PrintOptions.defaultOptions());
         printWriter.flush();
     }
 
     public void printSummary(DiffSummary summary, Appendable out, PrintOptions options) {
-        writeLine(out, "================ Excel 比对结果 ================");
-        writeLine(out, "左侧目录: " + summary.leftFolder);
-        writeLine(out, "右侧目录: " + summary.rightFolder);
+        writeLine(out, "================ Excel Comparison Result ================");
+        writeLine(out, "Left Directory: " + summary.leftFolder);
+        writeLine(out, "Right Directory: " + summary.rightFolder);
         writeLine(out, "");
 
         if (!summary.leftOnlyFiles.isEmpty()) {
-            writeLine(out, "仅左侧存在的文件:");
+            writeLine(out, "Files only in left directory:");
             for (String name : summary.leftOnlyFiles) {
                 writeLine(out, "  - " + name);
             }
@@ -195,7 +197,7 @@ public class ExcelFolderDiffTool {
         }
 
         if (!summary.rightOnlyFiles.isEmpty()) {
-            writeLine(out, "仅右侧存在的文件:");
+            writeLine(out, "Files only in right directory:");
             for (String name : summary.rightOnlyFiles) {
                 writeLine(out, "  - " + name);
             }
@@ -206,7 +208,7 @@ public class ExcelFolderDiffTool {
         int totalRawDiffs = 0;
 
         for (FileDiffResult fileResult : summary.fileResults) {
-            writeLine(out, "文件: " + fileResult.fileName);
+            writeLine(out, "File: " + fileResult.fileName);
 
             if (fileResult.errorMessage != null) {
                 writeLine(out, "  [ERROR] " + fileResult.errorMessage);
@@ -214,20 +216,20 @@ public class ExcelFolderDiffTool {
             }
 
             if (!fileResult.leftOnlySheets.isEmpty()) {
-                writeLine(out, "  仅左侧存在的 sheet: " + fileResult.leftOnlySheets);
+                writeLine(out, "  Sheets only in left: " + fileResult.leftOnlySheets);
             }
             if (!fileResult.rightOnlySheets.isEmpty()) {
-                writeLine(out, "  仅右侧存在的 sheet: " + fileResult.rightOnlySheets);
+                writeLine(out, "  Sheets only in right: " + fileResult.rightOnlySheets);
             }
 
             if (fileResult.cellDiffs.isEmpty()) {
-                writeLine(out, "  无差异");
+                writeLine(out, "  No differences");
                 writeLine(out, "");
                 continue;
             }
 
             totalRawDiffs += fileResult.cellDiffs.size();
-            writeLine(out, "  总差异数: " + fileResult.cellDiffs.size());
+            writeLine(out, "  Total differences: " + fileResult.cellDiffs.size());
 
             int printedInFile = 0;
             int omittedByFileLimit = 0;
@@ -261,28 +263,28 @@ public class ExcelFolderDiffTool {
 
             if (!omittedPerSheet.isEmpty()) {
                 for (Map.Entry<String, Integer> entry : omittedPerSheet.entrySet()) {
-                    writeLine(out, "    [LIMIT] sheet=" + entry.getKey() + " 额外差异已省略: " + entry.getValue());
+                    writeLine(out, "    [LIMIT] sheet=" + entry.getKey() + " additional differences omitted: " + entry.getValue());
                 }
             }
             if (omittedByFileLimit > 0) {
-                writeLine(out, "    [LIMIT] 文件级别额外差异已省略: " + omittedByFileLimit);
+                writeLine(out, "    [LIMIT] file-level additional differences omitted: " + omittedByFileLimit);
             }
             writeLine(out, "");
         }
 
-        writeLine(out, "================ 统计 ================");
-        writeLine(out, "匹配文件数: " + summary.fileResults.size());
-        writeLine(out, "仅左文件数: " + summary.leftOnlyFiles.size());
-        writeLine(out, "仅右文件数: " + summary.rightOnlyFiles.size());
-        writeLine(out, "总差异单元格数(原始): " + totalRawDiffs);
-        writeLine(out, "总差异单元格数(输出): " + totalPrintedDiffs);
+        writeLine(out, "================ Statistics ================");
+        writeLine(out, "Matched files: " + summary.fileResults.size());
+        writeLine(out, "Left-only files: " + summary.leftOnlyFiles.size());
+        writeLine(out, "Right-only files: " + summary.rightOnlyFiles.size());
+        writeLine(out, "Total cell differences (raw): " + totalRawDiffs);
+        writeLine(out, "Total cell differences (output): " + totalPrintedDiffs);
     }
 
     private void writeLine(Appendable out, String text) {
         try {
             out.append(text).append(System.lineSeparator());
         } catch (IOException e) {
-            throw new RuntimeException("写入比对结果失败", e);
+            throw new RuntimeException("Failed to write comparison result", e);
         }
     }
 
@@ -292,7 +294,7 @@ public class ExcelFolderDiffTool {
 
         public PrintOptions(int maxErrorsPerFile, int maxErrorsPerSheet) {
             if (maxErrorsPerFile <= 0 || maxErrorsPerSheet <= 0) {
-                throw new IllegalArgumentException("maxErrorsPerFile 和 maxErrorsPerSheet 必须大于0");
+                throw new IllegalArgumentException("maxErrorsPerFile and maxErrorsPerSheet must be greater than 0");
             }
             this.maxErrorsPerFile = maxErrorsPerFile;
             this.maxErrorsPerSheet = maxErrorsPerSheet;
@@ -319,18 +321,18 @@ public class ExcelFolderDiffTool {
 
     public static class FileDiffResult {
         private final String fileName;
-        private final Path leftPath;
-        private final Path rightPath;
-
+        private final Path leftFile;
+        private final Path rightFile;
         private String errorMessage;
+
         private final List<String> leftOnlySheets = new ArrayList<>();
         private final List<String> rightOnlySheets = new ArrayList<>();
         private final List<CellDiff> cellDiffs = new ArrayList<>();
 
-        public FileDiffResult(String fileName, Path leftPath, Path rightPath) {
+        public FileDiffResult(String fileName, Path leftFile, Path rightFile) {
             this.fileName = fileName;
-            this.leftPath = leftPath;
-            this.rightPath = rightPath;
+            this.leftFile = leftFile;
+            this.rightFile = rightFile;
         }
     }
 

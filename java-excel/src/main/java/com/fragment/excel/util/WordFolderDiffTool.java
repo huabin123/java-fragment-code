@@ -25,13 +25,13 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
- * Word 文件夹比对工具（.docx）。
+ * Word Folder Comparison Tool (.docx).
  *
- * <p>功能：
- * 1. 读取 resources 下两个目录中的 Word 文件
- * 2. 先按文件名匹配
- * 3. 对匹配文件进行段落和表格比对
- * 4. 输出差异明细（段落序号、表格行列位置、左右值）
+ * <p>Functions:
+ * 1. Read Word files from two directories under resources
+ * 2. Match files by name
+ * 3. Compare matched files for paragraphs and tables
+ * 4. Output difference details (paragraph index, table row/column position, left and right values)
  */
 public class WordFolderDiffTool {
 
@@ -39,10 +39,10 @@ public class WordFolderDiffTool {
 
     public DiffSummary compareFolders(Path leftFolder, Path rightFolder) {
         if (!Files.isDirectory(leftFolder)) {
-            throw new IllegalArgumentException("左侧目录不存在或不是目录: " + leftFolder);
+            throw new IllegalArgumentException("Left directory does not exist or is not a directory: " + leftFolder);
         }
         if (!Files.isDirectory(rightFolder)) {
-            throw new IllegalArgumentException("右侧目录不存在或不是目录: " + rightFolder);
+            throw new IllegalArgumentException("Right directory does not exist or is not a directory: " + rightFolder);
         }
 
         Map<String, Path> leftFiles = listWordFiles(leftFolder);
@@ -81,7 +81,7 @@ public class WordFolderDiffTool {
                             TreeMap::new
                     ));
         } catch (IOException e) {
-            throw new RuntimeException("读取目录失败: " + folder, e);
+            throw new RuntimeException("Failed to read directory: " + folder, e);
         }
     }
 
@@ -107,7 +107,7 @@ public class WordFolderDiffTool {
             compareTables(leftDoc, rightDoc, result);
 
         } catch (IOException e) {
-            result.errorMessage = "文件比对失败: " + e.getMessage();
+            result.errorMessage = "File comparison failed: " + e.getMessage();
         }
 
         return result;
@@ -201,13 +201,13 @@ public class WordFolderDiffTool {
     }
 
     public void printSummary(DiffSummary summary, Appendable out, PrintOptions options) {
-        writeLine(out, "================ Word 比对结果 ================");
-        writeLine(out, "左侧目录: " + summary.leftFolder);
-        writeLine(out, "右侧目录: " + summary.rightFolder);
+        writeLine(out, "================ Word Comparison Result ================");
+        writeLine(out, "Left Directory: " + summary.leftFolder);
+        writeLine(out, "Right Directory: " + summary.rightFolder);
         writeLine(out, "");
 
         if (!summary.leftOnlyFiles.isEmpty()) {
-            writeLine(out, "仅左侧存在的文件:");
+            writeLine(out, "Files only in left directory:");
             for (String name : summary.leftOnlyFiles) {
                 writeLine(out, "  - " + name);
             }
@@ -215,7 +215,7 @@ public class WordFolderDiffTool {
         }
 
         if (!summary.rightOnlyFiles.isEmpty()) {
-            writeLine(out, "仅右侧存在的文件:");
+            writeLine(out, "Files only in right directory:");
             for (String name : summary.rightOnlyFiles) {
                 writeLine(out, "  - " + name);
             }
@@ -226,7 +226,7 @@ public class WordFolderDiffTool {
         int totalPrintedDiffs = 0;
 
         for (FileDiffResult fileResult : summary.fileResults) {
-            writeLine(out, "文件: " + fileResult.fileName);
+            writeLine(out, "File: " + fileResult.fileName);
             if (fileResult.errorMessage != null) {
                 writeLine(out, "  [ERROR] " + fileResult.errorMessage);
                 continue;
@@ -234,13 +234,13 @@ public class WordFolderDiffTool {
 
             int fileRawDiffs = fileResult.paragraphDiffs.size() + fileResult.tableCellDiffs.size();
             if (fileRawDiffs == 0) {
-                writeLine(out, "  无差异");
+                writeLine(out, "  No differences");
                 writeLine(out, "");
                 continue;
             }
 
             totalRawDiffs += fileRawDiffs;
-            writeLine(out, "  总差异数: " + fileRawDiffs);
+            writeLine(out, "  Total differences: " + fileRawDiffs);
 
             int printedInFile = 0;
             int omittedByFileLimit = 0;
@@ -248,7 +248,7 @@ public class WordFolderDiffTool {
             Map<String, Integer> omittedPerGroup = new TreeMap<>();
 
             for (ParagraphDiff diff : fileResult.paragraphDiffs) {
-                String group = "段落";
+                String group = "Paragraphs";
                 if (printedInFile >= options.maxErrorsPerFile) {
                     omittedByFileLimit++;
                     continue;
@@ -259,14 +259,14 @@ public class WordFolderDiffTool {
                     continue;
                 }
 
-                writeLine(out, String.format("    - group=%s 段落#%d | left=[%s] right=[%s]",
+                writeLine(out, String.format("    - group=%s Paragraph#%d | left=[%s] right=[%s]",
                         group, diff.paragraphNo, diff.leftText, diff.rightText));
                 printedInFile++;
                 printedPerGroup.put(group, printedInGroup + 1);
             }
 
             for (TableCellDiff diff : fileResult.tableCellDiffs) {
-                String group = "表" + diff.tableNo;
+                String group = "Table" + diff.tableNo;
                 if (printedInFile >= options.maxErrorsPerFile) {
                     omittedByFileLimit++;
                     continue;
@@ -277,7 +277,7 @@ public class WordFolderDiffTool {
                     continue;
                 }
 
-                writeLine(out, String.format("    - group=%s 行=%d 列=%d | left=[%s] right=[%s]",
+                writeLine(out, String.format("    - group=%s Row=%d Col=%d | left=[%s] right=[%s]",
                         group, diff.row, diff.col, diff.leftText, diff.rightText));
                 printedInFile++;
                 printedPerGroup.put(group, printedInGroup + 1);
@@ -287,28 +287,28 @@ public class WordFolderDiffTool {
 
             if (!omittedPerGroup.isEmpty()) {
                 for (Map.Entry<String, Integer> entry : omittedPerGroup.entrySet()) {
-                    writeLine(out, "    [LIMIT] group=" + entry.getKey() + " 额外差异已省略: " + entry.getValue());
+                    writeLine(out, "    [LIMIT] group=" + entry.getKey() + " additional differences omitted: " + entry.getValue());
                 }
             }
             if (omittedByFileLimit > 0) {
-                writeLine(out, "    [LIMIT] 文件级别额外差异已省略: " + omittedByFileLimit);
+                writeLine(out, "    [LIMIT] file-level additional differences omitted: " + omittedByFileLimit);
             }
             writeLine(out, "");
         }
 
-        writeLine(out, "================ 统计 ================");
-        writeLine(out, "匹配文件数: " + summary.fileResults.size());
-        writeLine(out, "仅左文件数: " + summary.leftOnlyFiles.size());
-        writeLine(out, "仅右文件数: " + summary.rightOnlyFiles.size());
-        writeLine(out, "总差异数(原始): " + totalRawDiffs);
-        writeLine(out, "总差异数(输出): " + totalPrintedDiffs);
+        writeLine(out, "================ Statistics ================");
+        writeLine(out, "Matched files: " + summary.fileResults.size());
+        writeLine(out, "Left-only files: " + summary.leftOnlyFiles.size());
+        writeLine(out, "Right-only files: " + summary.rightOnlyFiles.size());
+        writeLine(out, "Total differences (raw): " + totalRawDiffs);
+        writeLine(out, "Total differences (output): " + totalPrintedDiffs);
     }
 
     private void writeLine(Appendable out, String text) {
         try {
             out.append(text).append(System.lineSeparator());
         } catch (IOException e) {
-            throw new RuntimeException("写入比对结果失败", e);
+            throw new RuntimeException("Failed to write comparison result", e);
         }
     }
 
@@ -318,7 +318,7 @@ public class WordFolderDiffTool {
 
         public PrintOptions(int maxErrorsPerFile, int maxErrorsPerSheet) {
             if (maxErrorsPerFile <= 0 || maxErrorsPerSheet <= 0) {
-                throw new IllegalArgumentException("maxErrorsPerFile 和 maxErrorsPerSheet 必须大于0");
+                throw new IllegalArgumentException("maxErrorsPerFile and maxErrorsPerSheet must be greater than 0");
             }
             this.maxErrorsPerFile = maxErrorsPerFile;
             this.maxErrorsPerSheet = maxErrorsPerSheet;
@@ -344,16 +344,16 @@ public class WordFolderDiffTool {
 
     public static class FileDiffResult {
         private final String fileName;
-        private final Path leftPath;
-        private final Path rightPath;
+        private final Path leftFile;
+        private final Path rightFile;
         private String errorMessage;
         private final List<ParagraphDiff> paragraphDiffs = new ArrayList<>();
         private final List<TableCellDiff> tableCellDiffs = new ArrayList<>();
 
-        public FileDiffResult(String fileName, Path leftPath, Path rightPath) {
+        public FileDiffResult(String fileName, Path leftFile, Path rightFile) {
             this.fileName = fileName;
-            this.leftPath = leftPath;
-            this.rightPath = rightPath;
+            this.leftFile = leftFile;
+            this.rightFile = rightFile;
         }
     }
 
