@@ -39,7 +39,10 @@ jobs:
             --main-class com.fragment.excel.FolderDiffMain \
             --dest dist \
             --mac-package-name "Folder Diff Tool" \
-            --mac-package-identifier com.fragment.excel.FolderDiffTool
+            --mac-package-identifier com.fragment.excel.FolderDiffTool \
+            --mac-sign \
+            --mac-signing-key-user-name "Developer ID Application" \
+            --mac-entitlements "<?xml version='1.0' encoding='UTF-8'?><!DOCTYPE plist PUBLIC '-//Apple//DTD PLIST 1.0//EN' 'http://www.apple.com/DTDs/PropertyList-1.0.dtd'><plist version='1.0'><dict><key>com.apple.security.cs.allow-jit</key><true/></dict></plist>"
 
       - name: Add helper scripts and readme
         run: |
