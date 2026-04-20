@@ -1,0 +1,104 @@
+name: build-folder-diff-dmg
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-mac-dmg:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+          architecture: aarch64
+
+      - name: Build fat jar
+        run: mvn -pl java-excel -DskipTests package
+
+      - name: Build dmg package via jpackage
+        run: |
+          jarPath="java-excel/target/folder-diff-tool.jar"
+          if [ ! -f "$jarPath" ]; then
+            echo "Fat jar not found: $jarPath"
+            exit 1
+          fi
+
+          mkdir -p dist/input
+
+          jpackage --type dmg \
+            --name FolderDiffTool \
+            --input java-excel/target \
+            --main-jar folder-diff-tool.jar \
+            --main-class com.fragment.excel.FolderDiffMain \
+            --dest dist \
+            --mac-package-name "Folder Diff Tool" \
+            --mac-package-identifier com.fragment.excel.FolderDiffTool
+
+      - name: Add helper scripts and readme
+        run: |
+          appDir="dist/FolderDiffTool.app/Contents/app"
+          mkdir -p "$appDir"
+
+          cat > "$appDir/run-excel.sh" << 'EOF'
+          #!/bin/bash
+          echo "Excel 文件夹比对"
+          read -p "请输入左侧目录: " LEFT
+          read -p "请输入右侧目录: " RIGHT
+          read -p "请输入结果txt路径(默认 excel-result.txt): " OUTPUT
+          if [ -z "$OUTPUT" ]; then
+            OUTPUT="excel-result.txt"
+          fi
+          "$(dirname "$0")/../MacOS/FolderDiffTool" excel "$LEFT" "$RIGHT" --output="$OUTPUT"
+          echo ""
+          echo "已完成，按回车键退出..."
+          read
+          EOF
+          chmod +x "$appDir/run-excel.sh"
+
+          cat > "$appDir/run-word.sh" << 'EOF'
+          #!/bin/bash
+          echo "Word 文件夹比对"
+          read -p "请输入左侧目录: " LEFT
+          read -p "请输入右侧目录: " RIGHT
+          read -p "请输入结果txt路径(默认 word-result.txt): " OUTPUT
+          if [ -z "$OUTPUT" ]; then
+            OUTPUT="word-result.txt"
+          fi
+          "$(dirname "$0")/../MacOS/FolderDiffTool" word "$LEFT" "$RIGHT" --output="$OUTPUT"
+          echo ""
+          echo "已完成，按回车键退出..."
+          read
+          EOF
+          chmod +x "$appDir/run-word.sh"
+
+          cat > "$appDir/README.txt" << 'EOF'
+          FolderDiffTool 使用说明
+
+          1) 双击 run-excel.sh 或 run-word.sh
+          2) 按提示输入左右目录和结果文件路径
+          3) 程序会生成 txt 报告
+
+          命令行示例
+          - Excel:
+            FolderDiffTool excel /path/to/left /path/to/right --output=excel-result.txt --max-errors-per-file=200 --max-errors-per-sheet=50
+          - Word:
+            FolderDiffTool word /path/to/left /path/to/right --output=word-result.txt --max-errors-per-file=200 --max-errors-per-sheet=50
+
+          参数说明
+          - --output=...                 结果txt路径
+          - --max-errors-per-file=...    每个文件最多输出差异条数
+          - --max-errors-per-sheet=...   每个sheet/分组最多输出差异条数
+          EOF
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: FolderDiffTool-macOS
+          path: dist/*.dmg
